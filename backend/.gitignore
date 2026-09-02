@@ -9,3 +9,6 @@ __pycache__/
 
 # local dev storage (LocalStorageProvider)
 data/
+
+# portable FFmpeg build (~200MB) — see README for how to fetch it
+tools/

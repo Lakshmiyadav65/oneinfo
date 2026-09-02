@@ -31,3 +31,6 @@ class LocalStorageProvider:
         path = self._resolve(key)
         if path.exists():
             path.unlink()
+
+    def get_url(self, key: str) -> str | None:
+        return None

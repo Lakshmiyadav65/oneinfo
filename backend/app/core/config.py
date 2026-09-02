@@ -44,6 +44,18 @@ class Settings(BaseSettings):
 
     hook_candidate_count: int = 4
 
+    video_provider: Literal["dev", "veo"] = "dev"
+    google_cloud_project: str | None = None
+    google_cloud_location: str = "us-central1"
+    google_application_credentials: str | None = None
+    veo_model: str = "veo-3.0-generate-001"
+
+    ffmpeg_path: str = "ffmpeg"
+    ffprobe_path: str = "ffprobe"
+    video_width: int = 1280
+    video_height: int = 720
+    video_fps: int = 30
+
     @property
     def auth_mode(self) -> Literal["supabase", "dev"]:
         return "supabase" if self.supabase_jwt_secret else "dev"

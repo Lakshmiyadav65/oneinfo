@@ -7,6 +7,9 @@ FastAPI + PostgreSQL/pgvector backend for the OneInfo AI Video Creator.
 - **Phase 03**: the content pipeline — idea → hooks → script → Tanglish
   (optional) → storyboard, each step backed by a structured agent, RAG
   context, and human approval gates.
+- **Phase 04**: turns an approved storyboard into a playable final MP4 —
+  per-scene video generation, asset storage, FFmpeg composition with
+  burned-in captions, and async job status.
 
 ## Stack
 
@@ -39,6 +42,21 @@ Run migrations (creates the `vector` extension + core tables):
 ./.venv/Scripts/alembic upgrade head
 ```
 
+FFmpeg is required (even in dev mode — see "Video generation" below).
+Either install it and leave `FFMPEG_PATH=ffmpeg` / `FFPROBE_PATH=ffprobe`
+in `.env`, or download a portable build and point those two at its
+`ffmpeg.exe`/`ffprobe.exe`:
+
+```bash
+curl -L -o tools/ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl-shared.zip
+# unzip into tools/, then set FFMPEG_PATH/FFPROBE_PATH in .env to its bin/ffmpeg.exe and bin/ffprobe.exe
+```
+
+(`tools/` is gitignored — this is a local machine setup step, not something
+committed. gyan.dev's build is the other option ffmpeg.org itself lists for
+Windows, but its downloads have been extremely slow from this environment;
+GitHub's release CDN was ~5MB/s vs <100KB/s.)
+
 Run the API:
 
 ```bash
@@ -63,6 +81,14 @@ and run for real the moment it is:
   progress from idea to approved storyboard using the same pipeline for
   Creator A and Creator B,"* plus cross-creator project isolation, the
   approved-content version-protection rule, and the optional-Tanglish path.
+- `tests/test_generation_pipeline.py` — the Phase 04 gate: *"At least one
+  complete project produces a playable final MP4,"* plus output isolation
+  and the duplicate-job guard.
+
+Tests that need FFmpeg but not the database (`test_video_dev_provider.py`,
+`test_rendering_service.py`) skip the same way if `FFMPEG_PATH`/
+`FFPROBE_PATH` aren't resolvable, and otherwise actually run FFmpeg and
+assert on the real output (playable, correct duration) — not mocked.
 
 ## Auth modes
 
@@ -116,3 +142,34 @@ content) and its result is returned inline on the storyboard response.
 Not wired into the frontend yet — verified via `tests/test_content_pipeline.py`
 against the API directly, same pattern as Phase 02. Frontend integration is
 later-phase work.
+
+## Video generation (Phase 04)
+
+`VIDEO_PROVIDER=dev` (default) renders each scene as a real, playable
+placeholder clip locally via FFmpeg (solid color + the visual_prompt text)
+instead of calling Veo — no Google Cloud credentials needed, and it proves
+the full asset/storage/render pipeline end-to-end. Set `VIDEO_PROVIDER=veo`
++ `GOOGLE_CLOUD_PROJECT` + `GOOGLE_APPLICATION_CREDENTIALS` (a service
+account JSON with Vertex AI access) for real generated video. Unlike the
+Gemini providers, this genuinely needs FFmpeg installed even in dev mode —
+see Setup above.
+
+Pipeline: `POST /projects/{id}/generate` creates a job and returns
+immediately (repeated clicks return the same in-flight job rather than
+starting a duplicate — the idempotency/duplicate-job guard); a background
+task generates each storyboard scene, stores it as an `Asset`, then
+`rendering_service` normalizes every clip, burns in its caption via FFmpeg
+`drawtext` (this happens uniformly here regardless of video source — real
+Veo output needs the same caption pass, so it doesn't belong in the video
+provider), and concatenates them into one final MP4, verified non-empty
+with a plausible probed duration before being marked complete. Poll
+`GET /projects/{id}/generation` for status, then
+`GET /projects/{id}/output` for playback metadata (its `url` proxies
+through `GET /projects/{id}/output/file` for local storage, since that has
+no public URL — a real StorageProvider would return a signed URL directly
+here instead).
+
+Same verification pattern as every other phase: `tests/test_generation_pipeline.py`
+is the actual proof of the gate and needs both FFmpeg and the database;
+`tests/test_video_dev_provider.py` and `tests/test_rendering_service.py`
+only need FFmpeg and already pass for real in this environment.
