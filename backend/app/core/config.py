@@ -35,10 +35,14 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 768
     gemini_api_key: str | None = None
 
+    llm_provider: Literal["dev", "gemini"] = "dev"
+
     rag_top_k: int = 5
     chunk_size_words: int = 400
     chunk_overlap_words: int = 60
     max_upload_bytes: int = 10 * 1024 * 1024
+
+    hook_candidate_count: int = 4
 
     @property
     def auth_mode(self) -> Literal["supabase", "dev"]:

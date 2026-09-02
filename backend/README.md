@@ -1,8 +1,12 @@
 # OneInfo Backend
 
 FastAPI + PostgreSQL/pgvector backend for the OneInfo AI Video Creator.
-Implements Phase 02 of the build package: auth, creator context, and
-creator-scoped RAG (knowledge upload → extract → chunk → embed → retrieve).
+
+- **Phase 02**: auth, creator context, creator-scoped RAG (knowledge upload
+  → extract → chunk → embed → retrieve).
+- **Phase 03**: the content pipeline — idea → hooks → script → Tanglish
+  (optional) → storyboard, each step backed by a structured agent, RAG
+  context, and human approval gates.
 
 ## Stack
 
@@ -49,13 +53,16 @@ Run the API:
 ./.venv/Scripts/pytest -v
 ```
 
-Unit tests (chunking, dev embedding provider, auth verifier, config) run
-with no external dependencies. Tests that need real Postgres+pgvector
-(`tests/test_knowledge_isolation.py` — the tenant-isolation acceptance
-test) **skip automatically** if `DATABASE_URL` isn't reachable, and run for
-real the moment it is. That file is the actual proof of the Phase 02 gate:
-*"Direct access attempts from Creator B to Creator A resources fail
-safely."*
+Unit tests (chunking, dev embedding/LLM providers, QA agent, auth verifier,
+config) run with no external dependencies. Tests that need real
+Postgres+pgvector **skip automatically** if `DATABASE_URL` isn't reachable,
+and run for real the moment it is:
+- `tests/test_knowledge_isolation.py` — the Phase 02 gate: *"Direct access
+  attempts from Creator B to Creator A resources fail safely."*
+- `tests/test_content_pipeline.py` — the Phase 03 gate: *"A project can
+  progress from idea to approved storyboard using the same pipeline for
+  Creator A and Creator B,"* plus cross-creator project isolation, the
+  approved-content version-protection rule, and the optional-Tanglish path.
 
 ## Auth modes
 
@@ -88,3 +95,24 @@ storage/retrieval/isolation pipeline works, not semantically strong. Set
 `./data/uploads` (gitignored). Swap for an S3/GCS/R2-backed
 `StorageProvider` in Phase 05 — routes and services only depend on the
 `StorageProvider` interface in `app/providers/storage/base.py`.
+
+## Content agents (Phase 03)
+
+`LLM_PROVIDER=dev` (default) uses a deterministic templated provider — no
+API key, schema-valid, clearly marked `[DEV MODE]` output, good enough to
+exercise and test the full pipeline. Set `LLM_PROVIDER=gemini` +
+`GEMINI_API_KEY` for real creative output.
+
+Pipeline: `POST /projects` → `POST /projects/{id}/hooks/generate` → select
+a hook → `POST /projects/{id}/script/generate` → approve → optionally
+`POST /projects/{id}/tanglish/generate` → approve →
+`POST /projects/{id}/storyboard/generate`. Approved script/Tanglish content
+is versioned, never overwritten in place — regenerating after approval
+creates a new version instead. The QA Agent runs automatically at the end
+of storyboard generation (structural validation only — scene coverage,
+missing voiceover/visuals, implausible durations — never rewrites
+content) and its result is returned inline on the storyboard response.
+
+Not wired into the frontend yet — verified via `tests/test_content_pipeline.py`
+against the API directly, same pattern as Phase 02. Frontend integration is
+later-phase work.
