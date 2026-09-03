@@ -1,3 +1,5 @@
+import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +21,10 @@ async def retrieve(
     search filtered afterward.
     """
     embedder = get_embedding_provider(settings)
-    query_embedding = embedder.embed([query])[0]
+    # Sync interface (real providers do blocking network I/O) — hop off
+    # the event loop.
+    embeddings = await asyncio.to_thread(embedder.embed, [query])
+    query_embedding = embeddings[0]
     limit = k or settings.rag_top_k
 
     stmt = (

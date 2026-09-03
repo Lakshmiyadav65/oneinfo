@@ -28,14 +28,24 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     celery_task_always_eager: bool = False
 
-    storage_backend: Literal["local", "s3"] = "local"
+    storage_backend: Literal["local", "gcs"] = "local"
     storage_local_path: str = "./data/uploads"
+    storage_bucket: str | None = None
 
-    embedding_provider: Literal["dev", "gemini"] = "dev"
+    embedding_provider: Literal["dev", "gemini", "openai"] = "dev"
     embedding_dimensions: int = 768
     gemini_api_key: str | None = None
+    gemini_model: str = "models/gemini-2.0-flash"
+    gemini_embedding_model: str = "models/text-embedding-004"
 
-    llm_provider: Literal["dev", "gemini"] = "dev"
+    llm_provider: Literal["dev", "gemini", "groq", "openai"] = "dev"
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.3-70b-versatile"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+
+    sentry_dsn: str | None = None
 
     rag_top_k: int = 5
     chunk_size_words: int = 400

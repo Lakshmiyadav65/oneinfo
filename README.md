@@ -29,6 +29,12 @@ oneinfo/
   Veo credentials aren't configured), asset storage, FFmpeg composition
   with burned-in captions, and async job status through to a verified
   final MP4.
+- **Phase 05 — Integration + Configuration**: done. Real GCS storage,
+  optional Groq/OpenAI LLM adapters, optional Sentry monitoring, and a
+  consolidated account-setup checklist (`backend/README.md`) for turning
+  all of it on. Redis/Celery deliberately deferred — BackgroundTasks is
+  correct for this MVP's scale, and the swap is a small, contained change
+  whenever Redis exists, not a rewrite.
 
 Frontend and backend are not yet wired together — that lands as part of
 later integration phases. Each currently runs and is tested independently.
@@ -37,7 +43,9 @@ pipeline working for two creators (03), a verified playable final MP4
 (04) — is proven by a backend test, not just written and hoped for.
 FFmpeg is now installed and those Phase 04 tests already pass for real;
 the ones needing the database still skip cleanly until Supabase
-credentials exist, then run for real too — see `backend/README.md`.
+credentials exist, then run for real too — see `backend/README.md`'s
+setup checklist for exactly what that (and the rest of Phase 05's real
+providers) needs from you.
 
 ## Quickstart
 

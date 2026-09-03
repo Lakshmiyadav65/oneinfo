@@ -1,13 +1,13 @@
 import httpx
 
-_MODEL = "models/text-embedding-004"
-_URL = f"https://generativelanguage.googleapis.com/v1beta/{_MODEL}:batchEmbedContents"
+_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 
 class GeminiEmbeddingProvider:
-    def __init__(self, api_key: str, dimensions: int):
+    def __init__(self, api_key: str, dimensions: int, model: str):
         self._api_key = api_key
         self._dimensions = dimensions
+        self._model = model
 
     @property
     def dimensions(self) -> int:
@@ -16,14 +16,14 @@ class GeminiEmbeddingProvider:
     def embed(self, texts: list[str]) -> list[list[float]]:
         requests = [
             {
-                "model": _MODEL,
+                "model": self._model,
                 "content": {"parts": [{"text": text}]},
                 "outputDimensionality": self._dimensions,
             }
             for text in texts
         ]
         response = httpx.post(
-            _URL,
+            f"{_BASE_URL}/{self._model}:batchEmbedContents",
             params={"key": self._api_key},
             json={"requests": requests},
             timeout=30.0,

@@ -5,12 +5,14 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.monitoring import configure_sentry
 
 
 def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
     settings.validate_for_startup()
+    configure_sentry(settings)
 
     app = FastAPI(title="OneInfo AI Video Creator API")
 

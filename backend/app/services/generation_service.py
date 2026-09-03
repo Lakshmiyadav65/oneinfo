@@ -160,7 +160,7 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 scene_duration = await probe_duration_seconds(settings.ffprobe_path, str(local_path))
 
                 storage_key = f"{project.creator_id}/{project.id}/scenes/{scene.id}.mp4"
-                storage.save(storage_key, video_bytes)
+                await asyncio.to_thread(storage.save, storage_key, video_bytes)
                 db.add(
                     Asset(
                         creator_id=project.creator_id,
@@ -185,7 +185,7 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
 
             final_bytes = final_path.read_bytes()
             output_storage_key = f"{project.creator_id}/{project.id}/output.mp4"
-            storage.save(output_storage_key, final_bytes)
+            await asyncio.to_thread(storage.save, output_storage_key, final_bytes)
 
             existing_output = await db.execute(
                 select(VideoOutput).where(VideoOutput.project_id == project.id)

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Response
@@ -67,10 +68,10 @@ async def download_output(
     """
     Streams the stored file for providers that can't hand back a direct
     URL (local dev storage). Reads the whole file into memory — acceptable
-    for MVP clip lengths; a cloud StorageProvider (Phase 05) returns a
-    signed URL instead and this route is never hit.
+    for MVP clip lengths; GCSStorageProvider returns a signed URL instead
+    and this route is never hit once STORAGE_BACKEND=gcs.
     """
     output = await generation_service.get_video_output(db, creator.id, project_id)
     storage = get_storage_provider(settings)
-    content = storage.read(output.storage_key)
+    content = await asyncio.to_thread(storage.read, output.storage_key)
     return Response(content=content, media_type=output.mime_type)

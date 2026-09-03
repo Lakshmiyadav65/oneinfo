@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from app.core.config import get_settings
@@ -28,7 +29,11 @@ async def process_knowledge_document(document_id: uuid.UUID, raw_text: str | Non
             text = raw_text
             if text is None:
                 storage = get_storage_provider(settings)
-                content = storage.read(document.storage_key)
+                # StorageProvider/EmbeddingProvider are sync interfaces
+                # (real providers do blocking network/disk I/O) — hop off
+                # the event loop so one slow document can't stall every
+                # other concurrent request.
+                content = await asyncio.to_thread(storage.read, document.storage_key)
                 text = extract_text(document.source_type, content)
 
             chunks = chunk_text(text, settings.chunk_size_words, settings.chunk_overlap_words)
@@ -36,7 +41,7 @@ async def process_knowledge_document(document_id: uuid.UUID, raw_text: str | Non
                 raise ValueError("No extractable text content.")
 
             embedder = get_embedding_provider(settings)
-            embeddings = embedder.embed(chunks)
+            embeddings = await asyncio.to_thread(embedder.embed, chunks)
 
             for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
                 db.add(

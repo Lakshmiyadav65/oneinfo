@@ -4,7 +4,6 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
-_DEFAULT_MODEL = "models/gemini-2.0-flash"
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 
@@ -31,13 +30,14 @@ class GeminiLLMProviderError(RuntimeError):
 
 
 class GeminiLLMProvider:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, default_model: str):
         self._api_key = api_key
+        self._default_model = default_model
 
     async def generate_structured(
         self, prompt: str, schema: type[BaseModel], *, model: str | None = None
     ) -> BaseModel:
-        url = f"{_BASE_URL}/{model or _DEFAULT_MODEL}:generateContent"
+        url = f"{_BASE_URL}/{model or self._default_model}:generateContent"
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {

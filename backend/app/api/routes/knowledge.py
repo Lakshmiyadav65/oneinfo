@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
@@ -64,7 +65,10 @@ async def upload_knowledge(
 
     storage = get_storage_provider(settings)
     storage_key = f"{creator.id}/{uuid.uuid4()}_{file.filename}"
-    storage.save(storage_key, content)
+    # StorageProvider is a sync interface (local disk is sync; so is the
+    # GCS SDK) — always hop off the event loop so a slow upload can't
+    # stall every other concurrent request.
+    await asyncio.to_thread(storage.save, storage_key, content)
 
     document = await knowledge_service.create_pending_document(
         db, creator.id, file.filename or "Untitled", source_type, storage_key
