@@ -66,4 +66,9 @@ export const mockAuthProvider: AuthProvider = {
       Object.values(DEMO_CREATORS).find((c) => c.id === creatorId) ?? null
     );
   },
+
+  getAuthToken() {
+    const creatorId = readSessionCookie();
+    return creatorId ? `dev:${creatorId}` : null;
+  },
 };

@@ -69,7 +69,7 @@ export default function KnowledgePage() {
               <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="text-sm font-medium text-foreground">{item.title}</p>
-                  <p className="text-xs uppercase text-muted-foreground">{item.type}</p>
+                  <p className="text-xs uppercase text-muted-foreground">{item.source_type}</p>
                 </div>
                 <Badge variant={STATUS_VARIANT[item.status]}>{item.status}</Badge>
               </CardContent>

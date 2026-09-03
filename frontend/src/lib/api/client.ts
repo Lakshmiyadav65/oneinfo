@@ -1,4 +1,5 @@
 import { env, isApiConfigured } from "@/config/env";
+import { getAuthProvider } from "@/lib/auth/provider";
 
 /**
  * The only path allowed to reach external AI providers or the database is
@@ -33,6 +34,27 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
+/**
+ * Builds the auth header from the active auth provider (dev-mock token or,
+ * once implemented, a real Supabase access token). Only ever called from
+ * client components, matching how every API module in this app is used.
+ */
+function buildHeaders(hasBody: boolean): HeadersInit {
+  const token = getAuthProvider().getAuthToken();
+  return {
+    Accept: "application/json",
+    ...(hasBody ? { "Content-Type": "application/json" } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+async function parseErrorMessage(res: Response): Promise<string | undefined> {
+  return res
+    .json()
+    .then((body: { error?: { message?: string; code?: string } }) => body?.error?.message)
+    .catch(() => undefined);
+}
+
 async function request<T>(
   path: string,
   init: RequestInit & RequestOptions = {}
@@ -45,17 +67,13 @@ async function request<T>(
     ...init,
     credentials: "include",
     headers: {
-      Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...buildHeaders(Boolean(init.body)),
       ...init.headers,
     },
   });
 
   if (!res.ok) {
-    const message = await res
-      .json()
-      .then((body: { message?: string }) => body?.message)
-      .catch(() => undefined);
+    const message = await parseErrorMessage(res);
     throw new ApiError(message ?? `Request failed (${res.status})`, res.status);
   }
 
@@ -64,6 +82,25 @@ async function request<T>(
   }
 
   return (await res.json()) as T;
+}
+
+async function requestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+  if (!isApiConfigured) {
+    throw new ApiNotConfiguredError();
+  }
+
+  const res = await fetch(`${env.apiUrl}${path}`, {
+    credentials: "include",
+    headers: buildHeaders(false),
+    signal: options.signal,
+  });
+
+  if (!res.ok) {
+    const message = await parseErrorMessage(res);
+    throw new ApiError(message ?? `Request failed (${res.status})`, res.status);
+  }
+
+  return res.blob();
 }
 
 export const api = {
@@ -83,4 +120,5 @@ export const api = {
     }),
   delete: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { method: "DELETE", ...options }),
+  getBlob: (path: string, options?: RequestOptions) => requestBlob(path, options),
 };

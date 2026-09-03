@@ -1,20 +1,25 @@
-import { api, ApiNotConfiguredError } from "@/lib/api/client";
-import type { ProjectDetail, ProjectSummary } from "@/types/project";
+import { api, ApiError, ApiNotConfiguredError } from "@/lib/api/client";
+import type { Project } from "@/types/project";
 
-export async function listProjects(): Promise<ProjectSummary[]> {
+export async function listProjects(): Promise<Project[]> {
   try {
-    return await api.get<ProjectSummary[]>("/projects");
+    return await api.get<Project[]>("/projects");
   } catch (err) {
     if (err instanceof ApiNotConfiguredError) return [];
     throw err;
   }
 }
 
-export async function getProject(projectId: string): Promise<ProjectDetail | null> {
+export async function getProject(projectId: string): Promise<Project | null> {
   try {
-    return await api.get<ProjectDetail>(`/projects/${projectId}`);
+    return await api.get<Project>(`/projects/${projectId}`);
   } catch (err) {
     if (err instanceof ApiNotConfiguredError) return null;
+    if (err instanceof ApiError && err.status === 404) return null;
     throw err;
   }
+}
+
+export async function createProject(idea: string, title?: string): Promise<Project> {
+  return api.post<Project>("/projects", { idea, title: title || undefined });
 }

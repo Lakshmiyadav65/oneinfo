@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -7,6 +8,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { nextStepForStatus } from "@/lib/workflow/steps";
 
 export function ProjectDetailView({ projectId }: { projectId: string }) {
   const project = useAsyncData(() => getProject(projectId), [projectId]);
@@ -44,6 +47,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
           <p className="text-sm text-muted-foreground">{project.data.idea}</p>
         </CardContent>
       </Card>
+      <div className="flex justify-end">
+        <Button asChild>
+          <Link href={`/create/${projectId}/${nextStepForStatus(project.data.status)}`}>
+            Continue
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }

@@ -1,14 +1,19 @@
-export type ProjectStatus = "draft" | "processing" | "ready" | "failed";
+export type ProjectStatus =
+  | "draft"
+  | "hooks"
+  | "script"
+  | "tanglish"
+  | "storyboard"
+  | "generating"
+  | "completed"
+  | "failed";
 
-export type ProjectSummary = {
+export type Project = {
   id: string;
   title: string;
-  status: ProjectStatus;
-  updatedAt: string;
-  thumbnailUrl?: string | null;
-};
-
-export type ProjectDetail = ProjectSummary & {
   idea: string;
-  videoUrl?: string | null;
+  status: ProjectStatus;
+  selected_hook_id: string | null;
+  created_at: string;
+  updated_at: string;
 };

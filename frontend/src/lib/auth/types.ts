@@ -11,4 +11,5 @@ export interface AuthProvider {
   signInWithPassword(email: string, password: string): Promise<Creator>;
   signOut(): Promise<void>;
   getSession(): Creator | null;
+  getAuthToken(): string | null;
 }

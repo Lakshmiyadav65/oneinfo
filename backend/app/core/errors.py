@@ -3,6 +3,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.config import get_settings
+
 
 class AppError(Exception):
     """Base for application errors that map to a stable error code."""
@@ -38,6 +40,26 @@ def _error_body(code: str, message: str) -> dict:
     return {"error": {"code": code, "message": message}}
 
 
+def _cors_headers_for(request: Request) -> dict[str, str]:
+    """
+    FastAPI/Starlette promotes the catch-all `Exception` handler into
+    ServerErrorMiddleware, which wraps CORSMiddleware rather than sitting
+    inside it — so responses from `handle_unexpected_error` below never
+    pick up CORS headers automatically, and the browser blocks them before
+    the frontend ever sees the body (looks like a network failure, not the
+    real error). Every other handler here is a normal Starlette exception
+    type and doesn't need this — only this one bypasses CORSMiddleware.
+    """
+    origin = request.headers.get("origin")
+    if origin and origin in get_settings().cors_allow_origins:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
@@ -56,9 +78,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(Exception)
-    async def handle_unexpected_error(_: Request, exc: Exception) -> JSONResponse:
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         # Never leak stack traces or provider details to the client.
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=_error_body("INTERNAL_ERROR", "Something went wrong. Please try again."),
+            headers=_cors_headers_for(request),
         )

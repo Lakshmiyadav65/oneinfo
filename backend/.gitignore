@@ -12,3 +12,6 @@ data/
 
 # portable FFmpeg build (~200MB) — see README for how to fetch it
 tools/
+
+# Google Cloud service account keys (Veo/GCS) — never commit these
+credentials/

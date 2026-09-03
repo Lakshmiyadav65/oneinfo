@@ -13,8 +13,12 @@ import { Badge } from "@/components/ui/Badge";
 
 const STATUS_VARIANT = {
   draft: "default",
-  processing: "default",
-  ready: "success",
+  hooks: "default",
+  script: "default",
+  tanglish: "default",
+  storyboard: "default",
+  generating: "warning",
+  completed: "success",
   failed: "destructive",
 } as const;
 
@@ -63,7 +67,7 @@ export default function ProjectsPage() {
                   <div>
                     <p className="text-sm font-medium text-foreground">{project.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      Updated {new Date(project.updatedAt).toLocaleDateString()}
+                      Updated {new Date(project.updated_at).toLocaleDateString()}
                     </p>
                   </div>
                   <Badge variant={STATUS_VARIANT[project.status]}>{project.status}</Badge>

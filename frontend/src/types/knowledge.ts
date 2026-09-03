@@ -1,10 +1,11 @@
 export type KnowledgeStatus = "processing" | "ready" | "failed";
-export type KnowledgeType = "pdf" | "docx" | "txt" | "text";
+export type KnowledgeSourceType = "pdf" | "docx" | "txt" | "text";
 
 export type KnowledgeItem = {
   id: string;
   title: string;
-  type: KnowledgeType;
+  source_type: KnowledgeSourceType;
   status: KnowledgeStatus;
-  createdAt: string;
+  error_message: string | null;
+  created_at: string;
 };

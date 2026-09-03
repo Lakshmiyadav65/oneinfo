@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Label } from "@/components/ui/Label";
@@ -7,18 +9,31 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-
-const STEPS = [
-  { key: "idea", label: "Idea" },
-  { key: "hooks", label: "Hooks" },
-  { key: "script", label: "Script" },
-  { key: "tanglish", label: "Tanglish" },
-  { key: "storyboard", label: "Storyboard" },
-  { key: "generate", label: "Generate" },
-];
+import { createProject } from "@/lib/api/projects";
+import { CREATE_STEPS, stepIndex } from "@/lib/workflow/steps";
 
 export default function CreateVideoPage() {
+  const router = useRouter();
   const { toast } = useToast();
+  const [title, setTitle] = useState("");
+  const [idea, setIdea] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    setIsSubmitting(true);
+    try {
+      const project = await createProject(idea, title || undefined);
+      router.push(`/create/${project.id}/hooks`);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't create project",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -29,13 +44,18 @@ export default function CreateVideoPage() {
         </p>
       </div>
 
-      <WorkflowStepper steps={STEPS} activeIndex={0} />
+      <WorkflowStepper steps={CREATE_STEPS} activeIndex={stepIndex("idea")} />
 
       <Card>
         <CardContent className="space-y-4 p-6">
           <div className="space-y-1.5">
             <Label htmlFor="project-title">Project title (optional)</Label>
-            <Input id="project-title" placeholder="e.g. Weekend recipe series #1" />
+            <Input
+              id="project-title"
+              placeholder="e.g. Weekend recipe series #1"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="idea">Idea</Label>
@@ -43,16 +63,15 @@ export default function CreateVideoPage() {
               id="idea"
               rows={5}
               placeholder="What's the video about? Describe your idea in a few sentences."
+              value={idea}
+              onChange={(e) => setIdea(e.target.value)}
             />
           </div>
           <div className="flex justify-end">
             <Button
-              onClick={() =>
-                toast({
-                  title: "Not available yet",
-                  description: "Hook generation lands in a later build.",
-                })
-              }
+              onClick={handleSubmit}
+              isLoading={isSubmitting}
+              disabled={idea.trim().length === 0}
             >
               Generate Hooks
             </Button>

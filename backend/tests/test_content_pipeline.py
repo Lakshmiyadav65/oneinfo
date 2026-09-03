@@ -31,7 +31,7 @@ async def test_script_generation_requires_a_selected_hook(client):
     project_id = resp.json()["id"]
 
     resp = await client.post(f"/projects/{project_id}/script/generate", headers=headers)
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 async def test_approved_tanglish_is_used_as_storyboard_source(client):

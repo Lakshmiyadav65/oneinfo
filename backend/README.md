@@ -117,6 +117,21 @@ concurrent creators). `app/workers/` has equivalent Celery tasks
 contained change (swap `background_tasks.add_task(...)` for `.delay(...)`
 at two call sites), not a rewrite.
 
+**Known, accepted limitation**: `generation_service.start_generation`'s
+duplicate-job guard (an existing queued/processing job short-circuits a new
+`POST /generate` instead of starting another) is a check-then-act read
+followed by a write, with no DB-level lock. Two genuinely simultaneous
+requests could both pass the check before either commits, creating two
+jobs. In practice the frontend's Generate button disables itself after the
+first click, so the realistic trigger (a careless double-click) is already
+closed off; only a true race (two tabs, a retry) could still hit it. Not
+hardened with a lock/unique-constraint for this MVP pass — same
+scale-appropriate judgment call as the Redis/Celery deferral above, not an
+oversight. `tests/test_generation_pipeline.py` notes why this specific race
+isn't exercised by its test client (httpx's `ASGITransport` runs
+`BackgroundTasks` to completion before `client.post()` returns, so
+sequential calls can't observe an in-flight job to test the guard against).
+
 ## Embeddings
 
 `EMBEDDING_PROVIDER=dev` (default) uses a deterministic hashed
@@ -209,6 +224,20 @@ picks them up with no further changes.
    (`test_knowledge_isolation.py`, `test_content_pipeline.py`,
    `test_generation_pipeline.py`) — right now they all skip cleanly for
    exactly this reason.
+
+   Set only `DATABASE_URL` first if you just want the database (pgvector
+   included) without switching auth modes yet — setting `SUPABASE_URL` /
+   `SUPABASE_JWT_SECRET` flips the backend from dev-mock auth
+   (`dev:creator-a` / `dev:creator-b`) to verifying real Supabase tokens,
+   and the frontend isn't wired for that yet (still on dev-mock auth as of
+   the frontend↔backend wiring pass — see root `README.md`).
+
+   A local native Postgres is **not** a good substitute here on Windows:
+   this was tried and hit a real wall — a locally installed
+   `postgresql-x64-18` service has no path to `pgvector` without building
+   it from source with MSVC (no official Windows binaries exist). Supabase
+   ships pgvector already enabled, which is the whole reason it's the
+   documented path rather than "install Postgres locally."
 2. **Google Cloud** — use the team's existing Google for Startups credits
    (per the master spec, don't open a second billing account). Create/use
    project `OneInfo-AI-Video-MVP`, enable the Vertex AI and Cloud Storage

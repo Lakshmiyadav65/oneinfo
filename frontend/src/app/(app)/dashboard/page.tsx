@@ -115,7 +115,7 @@ export default function DashboardPage() {
                     <span className="text-sm font-medium text-foreground">
                       {project.title}
                     </span>
-                    <Badge variant={project.status === "ready" ? "success" : "default"}>
+                    <Badge variant={project.status === "completed" ? "success" : "default"}>
                       {project.status}
                     </Badge>
                   </CardContent>

@@ -133,7 +133,7 @@ async def run_full_pipeline(client: AsyncClient, creator_id: str, idea: str) -> 
     resp = await client.patch(
         f"/projects/{project_id}/script", json={"content": "Sneaky overwrite."}, headers=headers
     )
-    assert resp.status_code == 400, resp.text
+    assert resp.status_code == 422, resp.text
 
     # Regenerating an approved script creates a new version, not an overwrite.
     resp = await client.post(f"/projects/{project_id}/script/regenerate", headers=headers)

@@ -10,7 +10,7 @@ export function WorkflowStepper({
   steps,
   activeIndex,
 }: {
-  steps: WorkflowStep[];
+  steps: readonly WorkflowStep[];
   activeIndex: number;
 }) {
   return (
