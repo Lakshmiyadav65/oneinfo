@@ -77,9 +77,17 @@ Run the API:
 ```
 
 Unit tests (chunking, dev embedding/LLM providers, QA agent, auth verifier,
-config) run with no external dependencies. Tests that need real
-Postgres+pgvector **skip automatically** if `DATABASE_URL` isn't reachable,
-and run for real the moment it is:
+config) run with no external dependencies.
+
+> **The DB-backed tests are destructive.** They truncate `creators` between
+> cases — which cascades to every project, script, storyboard and video — and
+> they seed `creator-a`/`creator-b`, the same ids dev-mock auth uses, so
+> there's no way to clean up "only test rows". They therefore run **only**
+> against a separate `TEST_DATABASE_URL`, and refuse to start if it matches
+> `DATABASE_URL`. Leave it unset and they skip. This is not optional
+> paranoia: pointing them at the app's database wipes real work.
+
+The tests that need real Postgres+pgvector, once `TEST_DATABASE_URL` is set:
 - `tests/test_knowledge_isolation.py` — the Phase 02 gate: *"Direct access
   attempts from Creator B to Creator A resources fail safely."*
 - `tests/test_content_pipeline.py` — the Phase 03 gate: *"A project can

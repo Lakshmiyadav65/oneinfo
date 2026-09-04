@@ -34,6 +34,12 @@ class Settings(BaseSettings):
 
     embedding_provider: Literal["dev", "gemini", "openai"] = "dev"
     embedding_dimensions: int = 768
+    # Tests truncate `creators` (which cascades to everything) between cases
+    # and use the same creator-a/creator-b ids as dev-mock auth, so they must
+    # never point at the database the app is using — set this to a separate
+    # database or the DB-backed tests skip. See tests/conftest.py.
+    test_database_url: str | None = None
+
     gemini_api_key: str | None = None
     # Dated model ids get retired (the previous defaults, gemini-2.0-flash
     # and text-embedding-004, both 404'd once actually called), but the

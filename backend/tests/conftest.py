@@ -1,5 +1,6 @@
 import os
 import shutil
+from pathlib import Path
 
 # Pin every external provider to its dev implementation so the suite stays
 # deterministic and offline even when .env points at real Gemini/Veo — these
@@ -8,6 +9,45 @@ os.environ.setdefault("EMBEDDING_PROVIDER", "dev")
 os.environ.setdefault("LLM_PROVIDER", "dev")
 os.environ.setdefault("VIDEO_PROVIDER", "dev")
 os.environ.setdefault("STORAGE_LOCAL_PATH", "./data/test-uploads")
+
+
+def _resolve_test_database_url() -> str | None:
+    """
+    The DB fixtures below truncate `creators` between tests, which cascades to
+    every project, script, storyboard and video in the database — and they
+    seed the same creator-a/creator-b ids that dev-mock auth uses, so there is
+    no way to clean up "only test rows". Running that against the app's own
+    database destroys real work, so it is only ever allowed against an
+    explicitly separate TEST_DATABASE_URL.
+    """
+    dotenv_values: dict[str, str] = {}
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            dotenv_values[key.strip()] = value.strip()
+
+    test_url = os.environ.get("TEST_DATABASE_URL") or dotenv_values.get("TEST_DATABASE_URL")
+    app_url = os.environ.get("DATABASE_URL") or dotenv_values.get("DATABASE_URL")
+
+    if not test_url:
+        return None
+    if app_url and test_url == app_url:
+        raise RuntimeError(
+            "TEST_DATABASE_URL is the same as DATABASE_URL. The DB tests wipe "
+            "every row between cases — point TEST_DATABASE_URL at a separate "
+            "database, or unset it to skip those tests."
+        )
+    return test_url
+
+
+# Point the whole app under test at the test database before anything imports
+# settings, so the engine singleton never sees the app's own DATABASE_URL.
+_TEST_DB_URL = _resolve_test_database_url()
+if _TEST_DB_URL:
+    os.environ["DATABASE_URL"] = _TEST_DB_URL
 
 import pytest
 import pytest_asyncio
@@ -46,9 +86,12 @@ async def db_available() -> bool:
     """
     Session-wide check for a reachable, migratable database. Tests that
     need real Postgres+pgvector skip (not fail) when this is False, so the
-    suite stays green before Supabase credentials are configured and turns
-    into real coverage the moment they are.
+    suite stays green before credentials are configured and turns into real
+    coverage the moment they are. Requires TEST_DATABASE_URL specifically —
+    these tests are destructive (see _resolve_test_database_url).
     """
+    if not _TEST_DB_URL:
+        return False
     try:
         engine = get_engine()
         async with engine.connect() as conn:
@@ -62,7 +105,11 @@ async def db_available() -> bool:
 @pytest_asyncio.fixture
 async def db_session(db_available: bool):
     if not db_available:
-        pytest.skip("DATABASE_URL not reachable — configure Supabase credentials to run this test.")
+        pytest.skip(
+            "No separate TEST_DATABASE_URL configured (or it isn't reachable). "
+            "These tests wipe every row between cases, so they never run "
+            "against the app's own DATABASE_URL."
+        )
 
     session_factory = get_session_factory()
     async with session_factory() as session:
