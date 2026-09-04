@@ -256,7 +256,7 @@ function ScriptEditor({
             Skip to Storyboard
           </Button>
           <Button onClick={() => router.push(`/create/${projectId}/tanglish`)}>
-            Add Tanglish (optional)
+            Change language (optional)
           </Button>
         </div>
       )}

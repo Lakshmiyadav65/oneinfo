@@ -4,7 +4,9 @@ export const CREATE_STEPS = [
   { key: "idea", label: "Idea" },
   { key: "hooks", label: "Hooks" },
   { key: "script", label: "Script" },
-  { key: "tanglish", label: "Tanglish" },
+  // Route key stays "tanglish" (the API path predates multi-language
+  // support); the label reflects what the step actually offers now.
+  { key: "tanglish", label: "Language" },
   { key: "storyboard", label: "Storyboard" },
   { key: "generate", label: "Generate" },
 ] as const;

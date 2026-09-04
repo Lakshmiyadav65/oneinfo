@@ -33,6 +33,15 @@ def escape_drawtext(text: str) -> str:
     return text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "’").replace("%", "\\%")
 
 
+def escape_fontfile_path(path: str) -> str:
+    """
+    drawtext parses its own filter string, so a Windows font path needs
+    forward slashes and an escaped drive colon (C\\:/Windows/... ) or the
+    filter fails to parse.
+    """
+    return path.replace("\\", "/").replace(":", "\\:")
+
+
 async def probe_duration_seconds(ffprobe_path: str, file_path: str) -> float:
     output = await _run(
         ffprobe_path,

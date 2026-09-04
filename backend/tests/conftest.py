@@ -1,7 +1,12 @@
 import os
 import shutil
 
+# Pin every external provider to its dev implementation so the suite stays
+# deterministic and offline even when .env points at real Gemini/Veo — these
+# take precedence over .env values in pydantic-settings.
 os.environ.setdefault("EMBEDDING_PROVIDER", "dev")
+os.environ.setdefault("LLM_PROVIDER", "dev")
+os.environ.setdefault("VIDEO_PROVIDER", "dev")
 os.environ.setdefault("STORAGE_LOCAL_PATH", "./data/test-uploads")
 
 import pytest

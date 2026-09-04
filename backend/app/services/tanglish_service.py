@@ -8,7 +8,7 @@ from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationAppError
 from app.models.project import ProjectStatus
 from app.models.script import ContentStatus
-from app.models.tanglish import TanglishScript
+from app.models.tanglish import LocalizedLanguage, TanglishScript
 from app.providers.llm import get_llm_provider
 from app.services import project_service, script_service
 
@@ -24,30 +24,46 @@ async def get_latest_tanglish(db: AsyncSession, project_id: uuid.UUID) -> Tangli
 
 
 async def generate_tanglish(
-    db: AsyncSession, settings: Settings, creator_id: str, project_id: uuid.UUID
+    db: AsyncSession,
+    settings: Settings,
+    creator_id: str,
+    project_id: uuid.UUID,
+    language: LocalizedLanguage = LocalizedLanguage.tanglish,
 ) -> TanglishScript:
     project = await project_service.get_owned_project(db, creator_id, project_id)
     english_script = await script_service.get_current_script(db, creator_id, project_id)
     if english_script.status != ContentStatus.approved:
-        raise ValidationAppError("Approve the English script before generating Tanglish.")
+        raise ValidationAppError(
+            "Approve the English script before generating a localized version."
+        )
 
     llm = get_llm_provider(settings)
-    output = await run_tanglish_agent(llm, english_script=english_script.content)
+    output = await run_tanglish_agent(
+        llm, english_script=english_script.content, language=language
+    )
 
     existing = await get_latest_tanglish(db, project.id)
     if existing is None:
         tanglish = TanglishScript(
-            project_id=project.id, creator_id=creator_id, version=1, content=output.script
+            project_id=project.id,
+            creator_id=creator_id,
+            version=1,
+            language=language,
+            content=output.script,
         )
         db.add(tanglish)
     elif existing.status == ContentStatus.draft:
+        # A draft is still editable, so switching language just replaces it
+        # rather than piling up versions the creator never approved.
         existing.content = output.script
+        existing.language = language
         tanglish = existing
     else:
         tanglish = TanglishScript(
             project_id=project.id,
             creator_id=creator_id,
             version=existing.version + 1,
+            language=language,
             content=output.script,
         )
         db.add(tanglish)

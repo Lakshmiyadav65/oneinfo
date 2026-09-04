@@ -1,5 +1,5 @@
 import { api, ApiError } from "@/lib/api/client";
-import type { Tanglish } from "@/types/tanglish";
+import type { LocalizedLanguage, Tanglish } from "@/types/tanglish";
 
 export async function getTanglish(projectId: string): Promise<Tanglish | null> {
   try {
@@ -11,8 +11,11 @@ export async function getTanglish(projectId: string): Promise<Tanglish | null> {
 }
 
 // Backend has a single /generate endpoint that also serves as regenerate.
-export async function generateTanglish(projectId: string): Promise<Tanglish> {
-  return api.post<Tanglish>(`/projects/${projectId}/tanglish/generate`);
+export async function generateTanglish(
+  projectId: string,
+  language: LocalizedLanguage,
+): Promise<Tanglish> {
+  return api.post<Tanglish>(`/projects/${projectId}/tanglish/generate`, { language });
 }
 
 export async function updateTanglish(projectId: string, content: string): Promise<Tanglish> {

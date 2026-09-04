@@ -2,7 +2,12 @@ import tempfile
 from pathlib import Path
 
 from app.core.config import Settings
-from app.providers.ffmpeg_runner import escape_drawtext, probe_duration_seconds, run_ffmpeg
+from app.providers.ffmpeg_runner import (
+    escape_drawtext,
+    escape_fontfile_path,
+    probe_duration_seconds,
+    run_ffmpeg,
+)
 
 
 async def render_final_video(
@@ -23,9 +28,13 @@ async def render_final_video(
     for index, (clip_path, caption) in enumerate(scenes):
         normalized_path = work_dir / f"scene_{index:03d}.mp4"
         caption_text = escape_drawtext(caption)
+        # Without an explicit font, drawtext falls back to a Latin-only face
+        # and non-Latin captions (Telugu) render as empty boxes. Set
+        # CAPTION_FONT_PATH to a font covering the script you generate in.
+        font_option = f"fontfile='{escape_fontfile_path(settings.caption_font_path)}':" if settings.caption_font_path else ""
         scale_and_caption_filter = (
             f"scale={settings.video_width}:{settings.video_height},fps={settings.video_fps},"
-            f"drawtext=text='{caption_text}':fontcolor=white:fontsize=32:"
+            f"drawtext={font_option}text='{caption_text}':fontcolor=white:fontsize=32:"
             "x=(w-text_w)/2:y=h-text_h-40:box=1:boxcolor=black@0.6:boxborderw=16"
         )
         await run_ffmpeg(

@@ -35,8 +35,15 @@ class Settings(BaseSettings):
     embedding_provider: Literal["dev", "gemini", "openai"] = "dev"
     embedding_dimensions: int = 768
     gemini_api_key: str | None = None
-    gemini_model: str = "models/gemini-2.0-flash"
-    gemini_embedding_model: str = "models/text-embedding-004"
+    # Dated model ids get retired (the previous defaults, gemini-2.0-flash
+    # and text-embedding-004, both 404'd once actually called), but the
+    # "-latest" alias isn't the answer either: it tracks the newest premium
+    # model, whose free tier allows only 20 requests/day — roughly three
+    # videos, since a full run makes ~6 model calls. A "lite" model has a
+    # far higher free quota and is plenty for this content. Override with
+    # GEMINI_MODEL (e.g. models/gemini-flash-latest) on a paid key.
+    gemini_model: str = "models/gemini-3.1-flash-lite"
+    gemini_embedding_model: str = "models/gemini-embedding-001"
 
     llm_provider: Literal["dev", "gemini", "groq", "openai"] = "dev"
     groq_api_key: str | None = None
@@ -65,6 +72,11 @@ class Settings(BaseSettings):
     video_width: int = 1280
     video_height: int = 720
     video_fps: int = 30
+    # Font used for burned-in captions. Unset means drawtext's built-in
+    # fallback, which covers Latin script only — pure Telugu captions render
+    # as empty boxes without a font that has Telugu glyphs (on Windows,
+    # C:/Windows/Fonts/Nirmala.ttc; elsewhere, Noto Sans Telugu).
+    caption_font_path: str | None = None
 
     @property
     def auth_mode(self) -> Literal["supabase", "dev"]:

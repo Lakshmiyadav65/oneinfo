@@ -8,7 +8,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.tanglish import TanglishScript
-from app.schemas.tanglish import TanglishOut, TanglishUpdateIn
+from app.schemas.tanglish import TanglishGenerateIn, TanglishOut, TanglishUpdateIn
 from app.services import tanglish_service
 
 router = APIRouter(prefix="/projects/{project_id}/tanglish", tags=["tanglish"])
@@ -17,11 +17,16 @@ router = APIRouter(prefix="/projects/{project_id}/tanglish", tags=["tanglish"])
 @router.post("/generate", response_model=TanglishOut)
 async def generate_tanglish(
     project_id: uuid.UUID,
+    # Defaulted so an omitted body still means Tanglish, matching the
+    # behaviour before the language choice existed.
+    payload: TanglishGenerateIn = TanglishGenerateIn(),
     creator: Creator = Depends(get_current_creator),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> TanglishScript:
-    return await tanglish_service.generate_tanglish(db, settings, creator.id, project_id)
+    return await tanglish_service.generate_tanglish(
+        db, settings, creator.id, project_id, payload.language
+    )
 
 
 @router.get("", response_model=TanglishOut)
