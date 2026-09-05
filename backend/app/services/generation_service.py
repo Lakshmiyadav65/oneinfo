@@ -19,7 +19,11 @@ from app.models.video_output import VideoOutput
 from app.providers.ffmpeg_runner import probe_duration_seconds
 from app.providers.storage import get_storage_provider
 from app.providers.video import get_supported_durations, get_video_provider
-from app.providers.video.base import VideoGenerationRequest, VideoProvider
+from app.providers.video.base import (
+    VideoGenerationRequest,
+    VideoProvider,
+    snap_duration,
+)
 from app.services import creator_face_service, project_service
 from app.services.rendering_service import render_final_video
 
@@ -70,17 +74,17 @@ async def start_generation(
     # each finished one is billed, so a storyboard the provider will reject
     # halfway through costs real money before it fails. Storyboards saved
     # before durations were snapped can still be stored this way.
+    # Snap any scene the provider would refuse, rather than refusing the run.
+    # Storyboards saved before a constraint was known - or before the creator
+    # was toggled on camera - can hold a length that is now illegal, and
+    # sending someone back to regenerate a storyboard they are happy with is
+    # a poor trade for a change we can make correctly ourselves.
     for scene in target_scenes:
         # On-camera scenes are bound by the tighter reference-to-video limit.
         allowed = get_supported_durations(settings, with_reference=scene.features_creator)
-        if allowed and scene.duration_seconds not in allowed:
-            options = ", ".join(str(d) for d in sorted(allowed))
-            kind = "scenes you appear in" if scene.features_creator else "b-roll scenes"
-            raise ValidationAppError(
-                f"Scene {scene.order} is {scene.duration_seconds}s, which the video "
-                f"provider cannot render: {options} second(s) only, for {kind}. "
-                "Regenerate the storyboard to fix it."
-            )
+        fixed = snap_duration(scene.duration_seconds, allowed)
+        if fixed != scene.duration_seconds:
+            scene.duration_seconds = fixed
 
     # A scene can only put the creator on camera if they have both uploaded
     # a reference photo and agreed to their likeness being used. Checked here
