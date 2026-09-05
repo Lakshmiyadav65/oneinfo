@@ -26,7 +26,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      {/*
+        Browser extensions (Grammarly, password managers, and friends) attach
+        their own attributes to <body> before React hydrates, which reads as a
+        server/client mismatch even though this className is a static literal.
+        React only suppresses this element's own attributes and text, one level
+        deep, so real mismatches inside the app still surface normally.
+      */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <AuthProvider>
           <TooltipProvider>
             <ToastProvider>{children}</ToastProvider>
