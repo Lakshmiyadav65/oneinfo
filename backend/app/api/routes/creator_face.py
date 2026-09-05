@@ -1,13 +1,17 @@
+import asyncio
 import uuid
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Response, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_creator
 from app.core.config import Settings, get_settings
+from app.core.errors import NotFoundError
 from app.db.session import get_db
 from app.models.creator import Creator
-from app.models.creator_face import MAX_FACE_IMAGES
+from app.models.creator_face import MAX_FACE_IMAGES, CreatorFaceImage
+from app.providers.storage import get_storage_provider
 from app.schemas.creator_face import (
     CreatorFaceImageOut,
     FaceDescriptionsIn,
@@ -84,6 +88,32 @@ async def update_descriptions(
     await db.commit()
     await db.refresh(creator)
     return await _setup(db, creator)
+
+
+@router.get("/{face_id}/file")
+async def get_face_file(
+    face_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """
+    Serves a reference photo back so the UI can show what was uploaded.
+    Scoped to the owning creator - a face is about as personal as stored
+    data gets, and nobody else has any business fetching one.
+    """
+    result = await db.execute(
+        select(CreatorFaceImage).where(
+            CreatorFaceImage.id == face_id, CreatorFaceImage.creator_id == creator.id
+        )
+    )
+    face = result.scalar_one_or_none()
+    if face is None:
+        raise NotFoundError("No such reference photo.")
+
+    storage = get_storage_provider(settings)
+    content = await asyncio.to_thread(storage.read, face.storage_key)
+    return Response(content=content, media_type=face.mime_type)
 
 
 # Declared last on purpose: "/{face_id}" would otherwise swallow "/consent"
