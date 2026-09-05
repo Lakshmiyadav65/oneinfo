@@ -54,9 +54,11 @@ class VeoVideoProvider:
         self._credentials = service_account.Credentials.from_service_account_file(
             credentials_path, scopes=_SCOPES
         )
-        # job_id -> operation name, since Vertex AI operations are
-        # addressed by name, not a short id.
-        self._operations: dict[str, str] = {}
+        # job_id -> (operation name, model), since Vertex AI operations are
+        # addressed by name, not a short id, AND the polling endpoint is
+        # per-model: an operation created on the reference model has to be
+        # polled and downloaded on that same model, not the default one.
+        self._operations: dict[str, tuple[str, str]] = {}
 
     def _access_token(self) -> str:
         if not self._credentials.valid:
@@ -102,15 +104,17 @@ class VeoVideoProvider:
         response.raise_for_status()
         operation_name = response.json()["name"]
         job_id = operation_name.rsplit("/", 1)[-1]
-        self._operations[job_id] = operation_name
+        # Store the model too: polling and download are per-model endpoints,
+        # and a job created on the reference tier must be followed there.
+        self._operations[job_id] = (operation_name, model)
         return job_id
 
     async def get_job_status(self, job_id: str) -> VideoJobStatus:
-        operation_name = self._operations.get(job_id)
-        if operation_name is None:
+        tracked = self._operations.get(job_id)
+        if tracked is None:
             return VideoJobStatus(status="failed", error_message="Unknown job id.")
 
-        data = await self._fetch_operation(operation_name)
+        data = await self._fetch_operation(*tracked)
         if not data.get("done"):
             return VideoJobStatus(status="processing")
         if "error" in data:
@@ -139,11 +143,11 @@ class VeoVideoProvider:
         return VideoJobStatus(status="completed")
 
     async def download_result(self, job_id: str) -> bytes:
-        operation_name = self._operations.get(job_id)
-        if operation_name is None:
+        tracked = self._operations.get(job_id)
+        if tracked is None:
             raise VeoProviderError("Unknown video job id.")
 
-        data = await self._fetch_operation(operation_name)
+        data = await self._fetch_operation(*tracked)
         # Verified against the live API: the finished operation returns
         # response.videos[], each with bytesBase64Encoded + mimeType. (It is
         # not response.predictions[] â€” that was the assumed shape before this
@@ -154,10 +158,10 @@ class VeoVideoProvider:
             raise VeoProviderError("Veo returned an unexpected response shape.") from exc
         return base64.b64decode(b64_video)
 
-    async def _fetch_operation(self, operation_name: str) -> dict:
+    async def _fetch_operation(self, operation_name: str, model: str) -> dict:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                f"{self._base_url()}:fetchPredictOperation",
+                f"{self._base_url(model)}:fetchPredictOperation",
                 headers={"Authorization": f"Bearer {self._access_token()}"},
                 json={"operationName": operation_name},
             )
