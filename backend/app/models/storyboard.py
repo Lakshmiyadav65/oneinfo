@@ -50,5 +50,9 @@ class StoryboardScene(Base):
     voiceover: Mapped[str] = mapped_column(Text, nullable=False)
     visual_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     caption: Mapped[str] = mapped_column(Text, nullable=False)
+    # Whether the creator is on camera in this scene. Drives both look and
+    # cost: only these scenes attach face references, and only these pay the
+    # reference model's rate (3-8x the Lite tier). B-roll stays cheap.
+    features_creator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     storyboard: Mapped[Storyboard] = relationship(back_populates="scenes")

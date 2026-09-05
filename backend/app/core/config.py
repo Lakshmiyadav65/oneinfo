@@ -71,7 +71,16 @@ class Settings(BaseSettings):
     google_cloud_project: str | None = None
     google_cloud_location: str = "us-central1"
     google_application_credentials: str | None = None
-    veo_model: str = "veo-3.0-generate-001"
+    # Lite is ~15x cheaper per second than the full Veo models and is plenty
+    # for this content. Verified working against the live API; the previous
+    # default (veo-3.0-generate-001) and the "-preview" spelling of Lite both
+    # 404 on a current project.
+    veo_model: str = "veo-3.1-lite-generate-001"
+    # Lite cannot do reference images at all - it rejects them with
+    # FAILED_PRECONDITION "The request is not supported by this model" - so a
+    # creator's face forces the pricier Fast tier ($0.15/s vs $0.05/s).
+    # Only calls that actually carry a face pay that; see VeoVideoProvider.
+    veo_reference_model: str = "veo-3.1-fast-generate-001"
 
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"

@@ -11,15 +11,16 @@ from app.core.config import Settings, get_settings
 from app.core.errors import AppError, NotFoundError, ValidationAppError
 from app.db.base import get_session_factory
 from app.models.asset import Asset, AssetType
+from app.models.creator import Creator
 from app.models.generation_job import GenerationJob, JobStatus
 from app.models.project import Project, ProjectStatus
 from app.models.storyboard import Storyboard
 from app.models.video_output import VideoOutput
 from app.providers.ffmpeg_runner import probe_duration_seconds
 from app.providers.storage import get_storage_provider
-from app.providers.video import get_video_provider
+from app.providers.video import get_supported_durations, get_video_provider
 from app.providers.video.base import VideoGenerationRequest, VideoProvider
-from app.services import project_service
+from app.services import creator_face_service, project_service
 from app.services.rendering_service import render_final_video
 
 
@@ -53,6 +54,38 @@ async def start_generation(
     storyboard = result.scalar_one_or_none()
     if storyboard is None or not storyboard.scenes:
         raise ValidationAppError("Generate a storyboard before starting video generation.")
+
+    # Check every scene up front. Scenes are generated one at a time and
+    # each finished one is billed, so a storyboard the provider will reject
+    # halfway through costs real money before it fails. Storyboards saved
+    # before durations were snapped can still be stored this way.
+    allowed_durations = get_supported_durations(settings)
+    if allowed_durations:
+        bad = sorted(
+            {s.duration_seconds for s in storyboard.scenes if s.duration_seconds not in allowed_durations}
+        )
+        if bad:
+            options = ", ".join(str(d) for d in sorted(allowed_durations))
+            raise ValidationAppError(
+                f"This storyboard has scene durations the video provider cannot render: "
+                f"{', '.join(f'{d}s' for d in bad)}. Supported durations are {options} seconds. "
+                "Regenerate the storyboard to fix it."
+            )
+
+    # A scene can only put the creator on camera if they have both uploaded
+    # a reference photo and agreed to their likeness being used. Checked here
+    # rather than mid-job so the refusal is immediate and costs nothing.
+    if any(scene.features_creator for scene in storyboard.scenes):
+        creator = await db.get(Creator, creator_id)
+        if creator is None:
+            raise NotFoundError("Creator not found.")
+        creator_face_service.require_consent(creator)
+        if not await creator_face_service.list_faces(db, creator_id):
+            raise ValidationAppError(
+                "This storyboard puts you on camera, but you haven't uploaded a "
+                "reference photo yet. Add one in Settings, or turn off the "
+                "on-camera scenes."
+            )
 
     # Idempotency: repeated clicks return the in-flight job instead of
     # starting another expensive generation.
@@ -139,6 +172,15 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             video_provider = get_video_provider(settings)
             storage = get_storage_provider(settings)
 
+            # Fetched once, not per scene: the same photos go to every
+            # on-camera scene, and re-reading them from storage each time
+            # would just be extra I/O.
+            face_images: list[bytes] = []
+            if any(scene.features_creator for scene in scenes):
+                face_images = await creator_face_service.load_face_bytes(
+                    db, settings, project.creator_id
+                )
+
             render_inputs: list[tuple[Path, str]] = []
             for index, scene in enumerate(scenes, start=1):
                 job.current_stage = f"Generating scene {index} of {len(scenes)}"
@@ -148,6 +190,9 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     VideoGenerationRequest(
                         visual_prompt=scene.visual_prompt,
                         duration_seconds=scene.duration_seconds,
+                        # Only on-camera scenes carry the face, so only they
+                        # get routed to the pricier reference model.
+                        reference_images=face_images if scene.features_creator else [],
                     )
                 )
                 await _wait_for_completion(video_provider, provider_job_id)

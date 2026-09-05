@@ -6,6 +6,10 @@ __pycache__/
 .mypy_cache/
 *.egg-info/
 .env
+# ...and every variant of it. A stray .env.bak or .env.local is just as
+# much a secret as .env itself, and none of them are ignored by ".env" alone.
+.env.*
+!.env.example
 
 # local dev storage (LocalStorageProvider)
 data/

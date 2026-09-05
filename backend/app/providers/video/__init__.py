@@ -16,5 +16,17 @@ def get_video_provider(settings: Settings) -> VideoProvider:
             settings.google_cloud_location,
             settings.google_application_credentials,
             settings.veo_model,
+            settings.veo_reference_model,
         )
     return DevVideoProvider(settings)
+
+
+def get_supported_durations(settings: Settings) -> tuple[int, ...] | None:
+    """
+    The active provider's clip-length constraint, without building the
+    provider itself — storyboard generation needs to know this and has no
+    reason to load service account credentials to ask.
+    """
+    if settings.video_provider == "veo":
+        return VeoVideoProvider.supported_durations
+    return DevVideoProvider.supported_durations

@@ -22,6 +22,9 @@ dependencies = [
   "google-auth>=2.35",
   "requests>=2.32",
   "google-cloud-storage>=2.18",
+  # Validates creator reference photos (format + dimensions) before they
+  # are ever sent to Veo as a subject reference.
+  "pillow>=11.0",
   "sentry-sdk[fastapi]>=2.0",
 ]
 

@@ -12,6 +12,7 @@ class StoryboardSceneOut(BaseModel):
     voiceover: str
     visual_prompt: str
     caption: str
+    features_creator: bool
 
 
 class StoryboardOut(BaseModel):

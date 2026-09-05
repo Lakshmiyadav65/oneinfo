@@ -21,6 +21,9 @@ class DevVideoProvider:
     VeoVideoProvider for real generated video.
     """
 
+    # FFmpeg renders any length, so dev runs are never snapped.
+    supported_durations: tuple[int, ...] | None = None
+
     def __init__(self, settings: Settings):
         self._settings = settings
         self._jobs: dict[str, Path] = {}

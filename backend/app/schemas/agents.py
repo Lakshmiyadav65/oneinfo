@@ -35,6 +35,9 @@ class StoryboardScene(BaseModel):
     voiceover: str
     visual_prompt: str
     caption: str
+    # True when the creator is on camera. Costs 3-8x a b-roll scene, so the
+    # agent is told to use it sparingly and only where a presenter earns it.
+    features_creator: bool = False
 
 
 class StoryboardOutput(BaseModel):
