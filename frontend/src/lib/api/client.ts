@@ -103,6 +103,36 @@ async function requestBlob(path: string, options: RequestOptions = {}): Promise<
   return res.blob();
 }
 
+/**
+ * Multipart upload. Deliberately does not go through `request`: setting a
+ * Content-Type by hand on a FormData body drops the multipart boundary the
+ * browser generates, and the request fails on the server as unparseable.
+ */
+async function requestForm<T>(
+  path: string,
+  form: FormData,
+  options: RequestOptions = {}
+): Promise<T> {
+  if (!isApiConfigured) {
+    throw new ApiNotConfiguredError();
+  }
+
+  const res = await fetch(`${env.apiUrl}${path}`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+    headers: buildHeaders(false),
+    signal: options.signal,
+  });
+
+  if (!res.ok) {
+    const message = await parseErrorMessage(res);
+    throw new ApiError(message ?? `Request failed (${res.status})`, res.status);
+  }
+
+  return (await res.json()) as T;
+}
+
 export const api = {
   get: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { method: "GET", ...options }),
@@ -121,4 +151,6 @@ export const api = {
   delete: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { method: "DELETE", ...options }),
   getBlob: (path: string, options?: RequestOptions) => requestBlob(path, options),
+  postForm: <T>(path: string, form: FormData, options?: RequestOptions) =>
+    requestForm<T>(path, form, options),
 };

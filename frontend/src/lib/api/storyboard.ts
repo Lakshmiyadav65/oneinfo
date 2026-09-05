@@ -14,3 +14,14 @@ export async function getStoryboard(projectId: string): Promise<Storyboard | nul
 export async function generateStoryboard(projectId: string): Promise<Storyboard> {
   return api.post<Storyboard>(`/projects/${projectId}/storyboard/generate`);
 }
+
+export async function setSceneOnCamera(
+  projectId: string,
+  sceneId: string,
+  featuresCreator: boolean
+): Promise<Storyboard> {
+  return api.patch<Storyboard>(
+    `/projects/${projectId}/storyboard/scenes/${sceneId}`,
+    { features_creator: featuresCreator }
+  );
+}

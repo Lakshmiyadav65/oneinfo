@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
-import { getStoryboard, generateStoryboard } from "@/lib/api/storyboard";
+import {
+  getStoryboard,
+  generateStoryboard,
+  setSceneOnCamera,
+} from "@/lib/api/storyboard";
+import type { Storyboard } from "@/types/storyboard";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -13,6 +18,33 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
+
+// Veo bills per second, and an on-camera scene runs on a pricier model
+// than b-roll. Surfaced per scene because the toggle below is the main
+// thing driving what a video costs, and that shouldn't be invisible.
+const B_ROLL_RUPEES_PER_SECOND = 4.78;
+const ON_CAMERA_RUPEES_PER_SECOND = 14.33;
+
+function sceneCost(durationSeconds: number, onCamera: boolean): string {
+  const rate = onCamera ? ON_CAMERA_RUPEES_PER_SECOND : B_ROLL_RUPEES_PER_SECOND;
+  return `₹${Math.round(durationSeconds * rate)}`;
+}
+
+function onCameraSurcharge(durationSeconds: number): string {
+  const extra = ON_CAMERA_RUPEES_PER_SECOND - B_ROLL_RUPEES_PER_SECOND;
+  return `₹${Math.round(durationSeconds * extra)}`;
+}
+
+function storyboardCost(storyboard: Storyboard): string {
+  const total = storyboard.scenes.reduce(
+    (sum, scene) =>
+      sum +
+      scene.duration_seconds *
+        (scene.features_creator ? ON_CAMERA_RUPEES_PER_SECOND : B_ROLL_RUPEES_PER_SECOND),
+    0
+  );
+  return `₹${Math.round(total)}`;
+}
 
 function errorDescription(err: unknown): string | undefined {
   return err instanceof Error ? err.message : undefined;
@@ -24,8 +56,11 @@ export function StoryboardView({ projectId }: { projectId: string }) {
   const project = useAsyncData(() => getProject(projectId), [projectId]);
   const storyboardQuery = useAsyncData(() => getStoryboard(projectId), [projectId]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [override, setOverride] = useState<Storyboard | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const storyboard = storyboardQuery.status === "success" ? storyboardQuery.data : null;
+  const storyboard =
+    override ?? (storyboardQuery.status === "success" ? storyboardQuery.data : null);
 
   useEffect(() => {
     if (storyboard && !storyboard.qa_passed) {
@@ -60,6 +95,7 @@ export function StoryboardView({ projectId }: { projectId: string }) {
     setIsGenerating(true);
     try {
       await generateStoryboard(projectId);
+      setOverride(null);
       storyboardQuery.retry();
     } catch (err) {
       toast({
@@ -69,6 +105,21 @@ export function StoryboardView({ projectId }: { projectId: string }) {
       });
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  async function handleToggleOnCamera(sceneId: string, next: boolean) {
+    setTogglingId(sceneId);
+    try {
+      setOverride(await setSceneOnCamera(projectId, sceneId, next));
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: next ? "Can't put you on camera" : "Couldn't update the scene",
+        description: errorDescription(err),
+      });
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -106,9 +157,14 @@ export function StoryboardView({ projectId }: { projectId: string }) {
       {storyboard && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <Badge variant={storyboard.qa_passed ? "success" : "destructive"}>
-              {storyboard.qa_passed ? "QA Passed" : "QA Issues Found"}
-            </Badge>
+            <div className="flex items-center gap-3">
+              <Badge variant={storyboard.qa_passed ? "success" : "destructive"}>
+                {storyboard.qa_passed ? "QA Passed" : "QA Issues Found"}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                Estimated {storyboardCost(storyboard)} to generate
+              </span>
+            </div>
             <Button variant="secondary" size="sm" onClick={handleGenerate} isLoading={isGenerating}>
               Regenerate Storyboard
             </Button>
@@ -131,11 +187,15 @@ export function StoryboardView({ projectId }: { projectId: string }) {
               <Card key={scene.id}>
                 <CardContent className="space-y-2 p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-foreground">
-                      Scene {scene.order}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-foreground">
+                        Scene {scene.order}
+                      </p>
+                      {scene.features_creator && <Badge variant="info">You</Badge>}
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      {scene.duration_seconds}s
+                      {scene.duration_seconds}s &middot;{" "}
+                      {sceneCost(scene.duration_seconds, scene.features_creator)}
                     </p>
                   </div>
                   <p className="text-sm text-foreground">{scene.voiceover}</p>
@@ -143,6 +203,23 @@ export function StoryboardView({ projectId }: { projectId: string }) {
                     Visual: {scene.visual_prompt}
                   </p>
                   <p className="text-xs text-muted-foreground">Caption: {scene.caption}</p>
+                  <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5"
+                      checked={scene.features_creator}
+                      disabled={togglingId === scene.id}
+                      onChange={(event) =>
+                        void handleToggleOnCamera(scene.id, event.target.checked)
+                      }
+                    />
+                    Put me on camera in this scene
+                    {!scene.features_creator && (
+                      <span className="text-muted-foreground/70">
+                        (+{onCameraSurcharge(scene.duration_seconds)})
+                      </span>
+                    )}
+                  </label>
                 </CardContent>
               </Card>
             ))}

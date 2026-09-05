@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Label } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { FaceSetupCard } from "@/components/settings/FaceSetupCard";
 
 export default function SettingsPage() {
   const { creator, signOut } = useAuth();
@@ -25,6 +26,9 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <h2 className="pt-2 text-xl font-semibold text-foreground">Appearance</h2>
+      <FaceSetupCard />
 
       <Button variant="destructive" onClick={() => void signOut()}>
         Sign out

@@ -5,6 +5,8 @@ export type StoryboardScene = {
   voiceover: string;
   visual_prompt: string;
   caption: string;
+  /** Creator is on camera. Costs several times a b-roll scene. */
+  features_creator: boolean;
 };
 
 export type Storyboard = {

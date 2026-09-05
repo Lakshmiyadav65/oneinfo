@@ -8,7 +8,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.storyboard import Storyboard
-from app.schemas.storyboard import StoryboardOut
+from app.schemas.storyboard import SceneOnCameraIn, StoryboardOut
 from app.services import storyboard_service
 
 router = APIRouter(prefix="/projects/{project_id}/storyboard", tags=["storyboard"])
@@ -31,3 +31,16 @@ async def get_storyboard(
     db: AsyncSession = Depends(get_db),
 ) -> Storyboard:
     return await storyboard_service.get_storyboard(db, creator.id, project_id)
+
+
+@router.patch("/scenes/{scene_id}", response_model=StoryboardOut)
+async def set_scene_on_camera(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    payload: SceneOnCameraIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> Storyboard:
+    return await storyboard_service.set_scene_on_camera(
+        db, creator.id, project_id, scene_id, payload.features_creator
+    )

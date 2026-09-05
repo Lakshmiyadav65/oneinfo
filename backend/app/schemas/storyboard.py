@@ -22,3 +22,7 @@ class StoryboardOut(BaseModel):
     qa_passed: bool
     qa_issues: list[str]
     scenes: list[StoryboardSceneOut]
+
+
+class SceneOnCameraIn(BaseModel):
+    features_creator: bool

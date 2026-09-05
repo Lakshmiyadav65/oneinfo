@@ -150,3 +150,46 @@ async def get_storyboard(db: AsyncSession, creator_id: str, project_id: uuid.UUI
     if storyboard is None:
         raise NotFoundError("No storyboard has been generated for this project yet.")
     return storyboard
+
+
+async def set_scene_on_camera(
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    features_creator: bool,
+) -> Storyboard:
+    """
+    Let the creator override the agent's call on which scenes they appear in.
+
+    Turning a scene on is gated the same way generation is - a photo and
+    consent - so the refusal arrives while editing rather than at the point
+    of spending. Turning one off is always allowed: nobody should have to
+    satisfy a precondition to take themselves out of a video.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    storyboard = await get_storyboard(db, creator_id, project_id)
+
+    scene = next((s for s in storyboard.scenes if s.id == scene_id), None)
+    if scene is None:
+        raise NotFoundError("No such scene in this storyboard.")
+
+    if features_creator and not scene.features_creator:
+        creator = await db.get(Creator, creator_id)
+        if creator is None:
+            raise NotFoundError("Creator not found.")
+        creator_face_service.require_consent(creator)
+        if not await creator_face_service.list_faces(db, creator_id):
+            raise ValidationAppError(
+                "Upload a reference photo in Settings before putting yourself on camera."
+            )
+        on_camera = sum(1 for s in storyboard.scenes if s.features_creator)
+        if on_camera >= MAX_ON_CAMERA_SCENES:
+            raise ValidationAppError(
+                f"At most {MAX_ON_CAMERA_SCENES} scenes can feature you on camera - "
+                "they cost several times a b-roll scene. Turn another one off first."
+            )
+
+    scene.features_creator = features_creator
+    await db.commit()
+    return await get_storyboard(db, creator_id, project_id)
