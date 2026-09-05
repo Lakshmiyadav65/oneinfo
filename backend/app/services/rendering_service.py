@@ -34,7 +34,10 @@ async def render_final_video(
         font_option = f"fontfile='{escape_fontfile_path(settings.caption_font_path)}':" if settings.caption_font_path else ""
         scale_and_caption_filter = (
             f"scale={settings.video_width}:{settings.video_height},fps={settings.video_fps},"
-            f"drawtext={font_option}text='{caption_text}':fontcolor=white:fontsize=32:"
+            # expansion=none: a caption is literal text. With expansion on,
+            # drawtext tries to interpret % and {} inside it and fails the render.
+            f"drawtext={font_option}expansion=none:text='{caption_text}':"
+            "fontcolor=white:fontsize=32:"
             "x=(w-text_w)/2:y=h-text_h-40:box=1:boxcolor=black@0.6:boxborderw=16"
         )
         await run_ffmpeg(

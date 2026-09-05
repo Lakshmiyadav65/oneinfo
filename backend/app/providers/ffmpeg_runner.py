@@ -18,10 +18,14 @@ async def _run(binary: str, args: list[str], *, error_message: str) -> str:
     )
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
-        # ffmpeg/ffprobe stderr can be long; keep only the tail for logs,
-        # and never surface raw provider/tooling output to the client.
-        tail = stderr.decode(errors="replace")[-2000:]
-        raise FFmpegError(f"{error_message}: {tail}")
+        # ffmpeg says what actually went wrong in its last few lines; everything
+        # before that is banner and stream dumps. Keeping 2000 characters looked
+        # thorough, but callers truncate to 500 for storage — which kept the
+        # banner and threw the error away. Keep the lines that matter instead.
+        lines = [
+            line for line in stderr.decode(errors="replace").splitlines() if line.strip()
+        ]
+        raise FFmpegError(f"{error_message}: " + " | ".join(lines[-4:]))
     return stdout.decode(errors="replace")
 
 
@@ -30,7 +34,16 @@ async def run_ffmpeg(ffmpeg_path: str, args: list[str]) -> None:
 
 
 def escape_drawtext(text: str) -> str:
-    return text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "’").replace("%", "\\%")
+    """
+    Escapes a caption for drawtext's filter syntax.
+
+    Note what is deliberately NOT escaped: `%`. drawtext rejects a
+    backslash-escaped percent outright — "Invalid argument", and the whole
+    render dies — and a percent only means anything when text expansion is on.
+    rendering_service passes expansion=none, so it is just a percent sign.
+    A caption as ordinary as "Why 90% of coders quit" used to kill the render.
+    """
+    return text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "’")
 
 
 def escape_fontfile_path(path: str) -> str:
