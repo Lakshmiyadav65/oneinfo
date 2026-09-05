@@ -26,6 +26,14 @@ class GenerationJob(Base):
     creator_id: Mapped[str] = mapped_column(
         String, ForeignKey("creators.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Null means the whole video. Set to render a single scene on its own,
+    # so a creator can see what one scene looks like before paying for the
+    # rest -- an on-camera scene alone can cost more than all the b-roll
+    # combined, and being able to check it first is the difference between
+    # one paid retry and several.
+    scene_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("storyboard_scenes.id", ondelete="CASCADE"), nullable=True
+    )
     status: Mapped[JobStatus] = mapped_column(String, nullable=False, default=JobStatus.queued, index=True)
     current_stage: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

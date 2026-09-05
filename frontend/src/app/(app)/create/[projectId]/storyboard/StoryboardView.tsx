@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/storyboard";
 import { getFaceSetup } from "@/lib/api/creator-face";
 import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
+import { ScenePreview } from "@/components/create/ScenePreview";
 import type { Storyboard } from "@/types/storyboard";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -231,6 +232,11 @@ export function StoryboardView({ projectId }: { projectId: string }) {
                       </span>
                     )}
                   </label>
+                  <ScenePreview
+                    projectId={projectId}
+                    sceneId={scene.id}
+                    cost={sceneCost(scene.duration_seconds, scene.features_creator)}
+                  />
                 </CardContent>
               </Card>
             ))}

@@ -40,7 +40,11 @@ async def _get_latest_job(db: AsyncSession, project_id: uuid.UUID) -> Generation
 
 
 async def start_generation(
-    db: AsyncSession, settings: Settings, creator_id: str, project_id: uuid.UUID
+    db: AsyncSession,
+    settings: Settings,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID | None = None,
 ) -> tuple[GenerationJob, bool]:
     """Returns (job, is_new) — is_new tells the caller whether to actually
     dispatch a worker; a returned in-flight job must never be re-dispatched."""
@@ -55,6 +59,13 @@ async def start_generation(
     if storyboard is None or not storyboard.scenes:
         raise ValidationAppError("Generate a storyboard before starting video generation.")
 
+    # A single-scene job validates and bills only that scene.
+    target_scenes = storyboard.scenes
+    if scene_id is not None:
+        target_scenes = [s for s in storyboard.scenes if s.id == scene_id]
+        if not target_scenes:
+            raise NotFoundError("No such scene in this storyboard.")
+
     # Check every scene up front. Scenes are generated one at a time and
     # each finished one is billed, so a storyboard the provider will reject
     # halfway through costs real money before it fails. Storyboards saved
@@ -62,7 +73,7 @@ async def start_generation(
     allowed_durations = get_supported_durations(settings)
     if allowed_durations:
         bad = sorted(
-            {s.duration_seconds for s in storyboard.scenes if s.duration_seconds not in allowed_durations}
+            {s.duration_seconds for s in target_scenes if s.duration_seconds not in allowed_durations}
         )
         if bad:
             options = ", ".join(str(d) for d in sorted(allowed_durations))
@@ -75,7 +86,7 @@ async def start_generation(
     # A scene can only put the creator on camera if they have both uploaded
     # a reference photo and agreed to their likeness being used. Checked here
     # rather than mid-job so the refusal is immediate and costs nothing.
-    if any(scene.features_creator for scene in storyboard.scenes):
+    if any(scene.features_creator for scene in target_scenes):
         creator = await db.get(Creator, creator_id)
         if creator is None:
             raise NotFoundError("Creator not found.")
@@ -93,9 +104,17 @@ async def start_generation(
     if existing is not None and existing.status in (JobStatus.queued, JobStatus.processing):
         return existing, False
 
-    job = GenerationJob(project_id=project.id, creator_id=creator_id, status=JobStatus.queued)
+    job = GenerationJob(
+        project_id=project.id,
+        creator_id=creator_id,
+        scene_id=scene_id,
+        status=JobStatus.queued,
+    )
     db.add(job)
-    project.status = ProjectStatus.generating
+    # A one-scene preview is not the project being generated - it must not
+    # move the project's status or the workflow jumps a step ahead of itself.
+    if scene_id is None:
+        project.status = ProjectStatus.generating
     await db.commit()
     await db.refresh(job)
     return job, True
@@ -118,6 +137,31 @@ async def get_video_output(db: AsyncSession, creator_id: str, project_id: uuid.U
     if output is None:
         raise NotFoundError("No finished video is available for this project yet.")
     return output
+
+
+async def get_scene_asset(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, scene_id: uuid.UUID
+) -> Asset:
+    """
+    The newest generated clip for one scene. Newest rather than only, since
+    regenerating a scene writes a fresh asset each time.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    result = await db.execute(
+        select(Asset)
+        .where(
+            Asset.project_id == project_id,
+            Asset.scene_id == scene_id,
+            Asset.creator_id == creator_id,
+            Asset.asset_type == AssetType.scene_video,
+        )
+        .order_by(Asset.created_at.desc())
+        .limit(1)
+    )
+    asset = result.scalar_one_or_none()
+    if asset is None:
+        raise NotFoundError("This scene hasn't been generated yet.")
+    return asset
 
 
 async def _wait_for_completion(
@@ -168,6 +212,12 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             )
             storyboard = result.scalar_one()
             scenes = sorted(storyboard.scenes, key=lambda s: s.order)
+            # A single-scene job renders that scene alone and stops there.
+            single_scene = job.scene_id is not None
+            if single_scene:
+                scenes = [s for s in scenes if s.id == job.scene_id]
+                if not scenes:
+                    raise GenerationError("That scene is no longer in the storyboard.")
 
             video_provider = get_video_provider(settings)
             storage = get_storage_provider(settings)
@@ -183,7 +233,11 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
 
             render_inputs: list[tuple[Path, str]] = []
             for index, scene in enumerate(scenes, start=1):
-                job.current_stage = f"Generating scene {index} of {len(scenes)}"
+                job.current_stage = (
+                    "Generating your scene"
+                    if single_scene
+                    else f"Generating scene {index} of {len(scenes)}"
+                )
                 await db.commit()
 
                 provider_job_id = await video_provider.create_video_job(
@@ -218,6 +272,17 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     )
                 )
                 render_inputs.append((local_path, scene.caption))
+
+            if single_scene:
+                # Nothing to stitch, and no finished video to publish - the
+                # scene asset saved above is the whole deliverable. Writing a
+                # VideoOutput here would overwrite the real finished video
+                # with a fragment of it.
+                job.status = JobStatus.completed
+                job.current_stage = "Completed"
+                job.error_message = None
+                await db.commit()
+                return
 
             job.current_stage = "Rendering final video"
             await db.commit()
@@ -256,8 +321,14 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             project = await db.get(Project, job.project_id) if job else None
             if job is not None:
                 job.status = JobStatus.failed
-                job.error_message = str(exc)[:500]
-            if project is not None:
+                # Some exceptions stringify to nothing at all, which leaves the
+                # creator staring at a failed job with no reason given. Fall
+                # back to the type name so there is always something to act on.
+                job.error_message = (str(exc) or type(exc).__name__)[:500]
+            # A failed one-scene preview says nothing about the project as a
+            # whole - the storyboard is still fine and the creator can just
+            # try a different scene. Only a real generation run fails it.
+            if project is not None and (job is None or job.scene_id is None):
                 project.status = ProjectStatus.failed
             await db.commit()
         finally:

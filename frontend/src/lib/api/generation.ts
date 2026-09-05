@@ -35,3 +35,17 @@ export async function getPlayableOutputUrl(output: VideoOutput): Promise<string>
   const blob = await api.getBlob(output.url);
   return URL.createObjectURL(blob);
 }
+
+/** Renders one scene on its own, so it can be checked before paying for the rest. */
+export async function generateScene(
+  projectId: string,
+  sceneId: string
+): Promise<GenerationJob> {
+  return api.post<GenerationJob>(
+    `/projects/${projectId}/storyboard/scenes/${sceneId}/generate`
+  );
+}
+
+export async function getSceneClip(projectId: string, sceneId: string): Promise<Blob> {
+  return api.getBlob(`/projects/${projectId}/scenes/${sceneId}/file`);
+}

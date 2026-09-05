@@ -75,3 +75,39 @@ async def download_output(
     storage = get_storage_provider(settings)
     content = await asyncio.to_thread(storage.read, output.storage_key)
     return Response(content=content, media_type=output.mime_type)
+
+
+@router.post("/storyboard/scenes/{scene_id}/generate", response_model=GenerationJobOut)
+async def start_scene_generation(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> GenerationJob:
+    """
+    Renders one scene on its own, so a creator can see how it looks before
+    paying for the rest of the video.
+    """
+    job, is_new = await generation_service.start_generation(
+        db, settings, creator.id, project_id, scene_id=scene_id
+    )
+    if is_new:
+        background_tasks.add_task(generation_service.run_generation_job, job.id)
+    return job
+
+
+@router.get("/scenes/{scene_id}/file")
+async def download_scene(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """The most recently generated clip for one scene."""
+    asset = await generation_service.get_scene_asset(db, creator.id, project_id, scene_id)
+    storage = get_storage_provider(settings)
+    content = await asyncio.to_thread(storage.read, asset.storage_key)
+    return Response(content=content, media_type=asset.mime_type)
