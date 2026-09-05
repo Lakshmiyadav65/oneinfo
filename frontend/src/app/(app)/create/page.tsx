@@ -47,6 +47,13 @@ export default function CreateVideoPage() {
 
       <WorkflowStepper steps={CREATE_STEPS} activeIndex={stepIndex("idea")} />
 
+      {/*
+        Above the idea form on purpose. The on-camera choice happens three
+        steps later in the storyboard, so it needs to register before someone
+        has already written their idea and is reaching for the button.
+      */}
+      <CreatorFacePrompt />
+
       <Card>
         <CardContent className="space-y-4 p-6">
           <div className="space-y-1.5">
@@ -68,11 +75,6 @@ export default function CreateVideoPage() {
               onChange={(e) => setIdea(e.target.value)}
             />
           </div>
-          {/*
-            Asked here, at the start, because the on-camera choice happens
-            three steps later in the storyboard and is easy to miss entirely.
-          */}
-          <CreatorFacePrompt />
           <div className="flex justify-end">
             <Button
               onClick={handleSubmit}
