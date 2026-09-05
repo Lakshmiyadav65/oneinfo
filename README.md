@@ -1,4 +1,4 @@
-# OneInfo 🌹
+# OneInfo
 
 Built by a developer who believes two things deserve care:
 the people you love, and the code you leave behind for the next person.
