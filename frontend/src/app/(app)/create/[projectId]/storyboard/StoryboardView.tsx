@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
@@ -11,6 +10,7 @@ import {
   setSceneOnCamera,
 } from "@/lib/api/storyboard";
 import { getFaceSetup } from "@/lib/api/creator-face";
+import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
 import type { Storyboard } from "@/types/storyboard";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -189,27 +189,7 @@ export function StoryboardView({ projectId }: { projectId: string }) {
             </Card>
           )}
 
-          {!canGoOnCamera && (
-            <Card className="border-primary/20 bg-primary/5">
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    Want to be in this video?
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {face && face.images.length > 0
-                      ? "Your photos are ready — you just need to agree to your likeness being used."
-                      : "Add a photo of yourself and you can present the video instead of a stranger."}
-                  </p>
-                </div>
-                <Button asChild variant="secondary" size="sm">
-                  <Link href="/settings">
-                    {face && face.images.length > 0 ? "Review consent" : "Add your photo"}
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+          <CreatorFacePrompt onChange={() => faceQuery.retry()} />
 
           <div className="space-y-2">
             {storyboard.scenes.map((scene) => (
