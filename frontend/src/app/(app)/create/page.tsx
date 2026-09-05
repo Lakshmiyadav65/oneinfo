@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -10,6 +11,8 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { createProject } from "@/lib/api/projects";
+import { getFaceSetup } from "@/lib/api/creator-face";
+import { useAsyncData } from "@/hooks/useAsyncData";
 import { CREATE_STEPS, stepIndex } from "@/lib/workflow/steps";
 
 export default function CreateVideoPage() {
@@ -18,6 +21,9 @@ export default function CreateVideoPage() {
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const faceQuery = useAsyncData(() => getFaceSetup(), []);
+  const faceReady =
+    faceQuery.status === "success" ? faceQuery.data.ready_for_generation : true;
 
   async function handleSubmit() {
     setIsSubmitting(true);
@@ -67,6 +73,20 @@ export default function CreateVideoPage() {
               onChange={(e) => setIdea(e.target.value)}
             />
           </div>
+          {/*
+            Mentioned here, at the start, because the on-camera choice is made
+            three steps later in the storyboard and is easy to miss entirely --
+            the upload itself lives in Settings.
+          */}
+          {!faceReady && (
+            <p className="text-xs text-muted-foreground">
+              Want to present this video yourself?{" "}
+              <Link href="/settings" className="underline hover:text-foreground">
+                Add a photo of yourself
+              </Link>{" "}
+              and you can appear on camera in it.
+            </p>
+          )}
           <div className="flex justify-end">
             <Button
               onClick={handleSubmit}

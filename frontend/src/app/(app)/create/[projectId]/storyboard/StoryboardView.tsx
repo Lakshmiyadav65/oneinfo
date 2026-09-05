@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
@@ -9,6 +10,7 @@ import {
   generateStoryboard,
   setSceneOnCamera,
 } from "@/lib/api/storyboard";
+import { getFaceSetup } from "@/lib/api/creator-face";
 import type { Storyboard } from "@/types/storyboard";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -55,12 +57,17 @@ export function StoryboardView({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const project = useAsyncData(() => getProject(projectId), [projectId]);
   const storyboardQuery = useAsyncData(() => getStoryboard(projectId), [projectId]);
+  const faceQuery = useAsyncData(() => getFaceSetup(), []);
   const [isGenerating, setIsGenerating] = useState(false);
   const [override, setOverride] = useState<Storyboard | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const storyboard =
     override ?? (storyboardQuery.status === "success" ? storyboardQuery.data : null);
+  const face = faceQuery.status === "success" ? faceQuery.data : null;
+  // Until a photo and consent both exist, generation refuses an on-camera
+  // scene -- so the toggle is disabled rather than left to fail on click.
+  const canGoOnCamera = face?.ready_for_generation ?? false;
 
   useEffect(() => {
     if (storyboard && !storyboard.qa_passed) {
@@ -182,6 +189,28 @@ export function StoryboardView({ projectId }: { projectId: string }) {
             </Card>
           )}
 
+          {!canGoOnCamera && (
+            <Card className="border-primary/20 bg-primary/5">
+              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Want to be in this video?
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {face && face.images.length > 0
+                      ? "Your photos are ready — you just need to agree to your likeness being used."
+                      : "Add a photo of yourself and you can present the video instead of a stranger."}
+                  </p>
+                </div>
+                <Button asChild variant="secondary" size="sm">
+                  <Link href="/settings">
+                    {face && face.images.length > 0 ? "Review consent" : "Add your photo"}
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="space-y-2">
             {storyboard.scenes.map((scene) => (
               <Card key={scene.id}>
@@ -208,12 +237,14 @@ export function StoryboardView({ projectId }: { projectId: string }) {
                       type="checkbox"
                       className="h-3.5 w-3.5"
                       checked={scene.features_creator}
-                      disabled={togglingId === scene.id}
+                      disabled={togglingId === scene.id || !canGoOnCamera}
                       onChange={(event) =>
                         void handleToggleOnCamera(scene.id, event.target.checked)
                       }
                     />
-                    Put me on camera in this scene
+                    {canGoOnCamera
+                      ? "Put me on camera in this scene"
+                      : "Put me on camera (add a photo in Settings first)"}
                     {!scene.features_creator && (
                       <span className="text-muted-foreground/70">
                         (+{onCameraSurcharge(scene.duration_seconds)})
