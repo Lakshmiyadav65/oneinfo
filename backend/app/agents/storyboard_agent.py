@@ -10,6 +10,7 @@ async def run_storyboard_agent(
     script_content: str,
     estimated_duration_seconds: int | None,
     allowed_durations: tuple[int, ...] | None = None,
+    reference_durations: tuple[int, ...] | None = None,
     creator_on_camera: bool = False,
     appearance_description: str | None = None,
     voice_description: str | None = None,
@@ -47,6 +48,13 @@ async def run_storyboard_agent(
             camera_rule += (
                 "End every on-camera visual_prompt with this voice description, "
                 f"copied word for word: {voice_description}\n"
+            )
+        if reference_durations:
+            ref_options = ", ".join(str(d) for d in sorted(reference_durations))
+            camera_rule += (
+                f"An on-camera scene MUST be exactly {ref_options} second(s) long - "
+                "the video model allows no other length while the creator is in "
+                "frame. Scenes without the creator keep the durations above.\n"
             )
         camera_rule += (
             "Keep the spoken line in an on-camera scene under 20 words so it fits "

@@ -33,9 +33,16 @@ function sceneCost(durationSeconds: number, onCamera: boolean): string {
   return `₹${Math.round(durationSeconds * rate)}`;
 }
 
+// Veo only renders 8-second clips when the creator is in frame, so turning a
+// scene on-camera also stretches it to 8s. The surcharge has to price that,
+// not just the rate difference on the current length.
+const ON_CAMERA_SECONDS = 8;
+
 function onCameraSurcharge(durationSeconds: number): string {
-  const extra = ON_CAMERA_RUPEES_PER_SECOND - B_ROLL_RUPEES_PER_SECOND;
-  return `₹${Math.round(durationSeconds * extra)}`;
+  const extra =
+    ON_CAMERA_SECONDS * ON_CAMERA_RUPEES_PER_SECOND -
+    durationSeconds * B_ROLL_RUPEES_PER_SECOND;
+  return `₹${Math.round(extra)}`;
 }
 
 function storyboardCost(storyboard: Storyboard): string {
@@ -224,7 +231,7 @@ export function StoryboardView({ projectId }: { projectId: string }) {
                       }
                     />
                     {canGoOnCamera
-                      ? "Put me on camera in this scene"
+                      ? `Put me on camera in this scene${scene.features_creator ? "" : " (becomes 8s)"}`
                       : "Put me on camera (add a photo in Settings first)"}
                     {!scene.features_creator && (
                       <span className="text-muted-foreground/70">

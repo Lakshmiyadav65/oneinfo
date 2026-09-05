@@ -70,16 +70,15 @@ async def start_generation(
     # each finished one is billed, so a storyboard the provider will reject
     # halfway through costs real money before it fails. Storyboards saved
     # before durations were snapped can still be stored this way.
-    allowed_durations = get_supported_durations(settings)
-    if allowed_durations:
-        bad = sorted(
-            {s.duration_seconds for s in target_scenes if s.duration_seconds not in allowed_durations}
-        )
-        if bad:
-            options = ", ".join(str(d) for d in sorted(allowed_durations))
+    for scene in target_scenes:
+        # On-camera scenes are bound by the tighter reference-to-video limit.
+        allowed = get_supported_durations(settings, with_reference=scene.features_creator)
+        if allowed and scene.duration_seconds not in allowed:
+            options = ", ".join(str(d) for d in sorted(allowed))
+            kind = "scenes you appear in" if scene.features_creator else "b-roll scenes"
             raise ValidationAppError(
-                f"This storyboard has scene durations the video provider cannot render: "
-                f"{', '.join(f'{d}s' for d in bad)}. Supported durations are {options} seconds. "
+                f"Scene {scene.order} is {scene.duration_seconds}s, which the video "
+                f"provider cannot render: {options} second(s) only, for {kind}. "
                 "Regenerate the storyboard to fix it."
             )
 

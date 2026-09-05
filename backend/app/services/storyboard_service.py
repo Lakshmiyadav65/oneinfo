@@ -28,7 +28,9 @@ MAX_ON_CAMERA_SCENES = 2
 
 
 def _normalize_scenes(
-    output: StoryboardOutput, allowed_durations: tuple[int, ...] | None
+    output: StoryboardOutput,
+    allowed_durations: tuple[int, ...] | None,
+    reference_durations: tuple[int, ...] | None = None,
 ) -> None:
     """
     Make the model's storyboard renderable before anything acts on it.
@@ -43,7 +45,11 @@ def _normalize_scenes(
     scenes = sorted(output.scenes, key=lambda scene: scene.order)
     for index, scene in enumerate(scenes, start=1):
         scene.order = index
-        scene.duration_seconds = snap_duration(scene.duration_seconds, allowed_durations)
+        # An on-camera scene is bound by the reference-to-video limit, which
+        # is far tighter than text-to-video - on Veo it is 8 seconds and
+        # nothing else.
+        allowed = reference_durations if scene.features_creator else allowed_durations
+        scene.duration_seconds = snap_duration(scene.duration_seconds, allowed)
     output.scenes = scenes
 
 
@@ -92,17 +98,21 @@ async def generate_storyboard(
 
     llm = get_llm_provider(settings)
     allowed_durations = get_supported_durations(settings)
+    reference_durations = get_supported_durations(settings, with_reference=True)
     output = await run_storyboard_agent(
         llm,
         script_content=source_content,
         estimated_duration_seconds=english_script.estimated_duration_seconds,
         allowed_durations=allowed_durations,
+        reference_durations=reference_durations,
         creator_on_camera=on_camera_available,
         appearance_description=creator.appearance_description if creator else None,
         voice_description=creator.voice_description if creator else None,
     )
-    _normalize_scenes(output, allowed_durations)
+    # Cap first: _normalize_scenes picks each scene's duration from whether
+    # it is on camera, so the flags have to be settled before it runs.
     _cap_on_camera_scenes(output, on_camera_available)
+    _normalize_scenes(output, allowed_durations, reference_durations)
     qa_result = run_qa_agent(
         output, estimated_duration_seconds=english_script.estimated_duration_seconds
     )
@@ -154,6 +164,7 @@ async def get_storyboard(db: AsyncSession, creator_id: str, project_id: uuid.UUI
 
 async def set_scene_on_camera(
     db: AsyncSession,
+    settings: Settings,
     creator_id: str,
     project_id: uuid.UUID,
     scene_id: uuid.UUID,
@@ -191,5 +202,12 @@ async def set_scene_on_camera(
             )
 
     scene.features_creator = features_creator
+    # Switching a scene on or off camera changes which clip lengths the
+    # provider will accept, so the duration has to move with it. Without
+    # this, turning on a 6-second scene produces a storyboard Veo rejects.
+    scene.duration_seconds = snap_duration(
+        scene.duration_seconds,
+        get_supported_durations(settings, with_reference=features_creator),
+    )
     await db.commit()
     return await get_storyboard(db, creator_id, project_id)

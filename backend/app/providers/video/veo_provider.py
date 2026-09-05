@@ -31,6 +31,10 @@ class VeoVideoProvider:
     # are [8,4,6] for feature text_to_video" — and any scenes already
     # generated before that point have still been billed.
     supported_durations: tuple[int, ...] | None = (4, 6, 8)
+    # Reference-to-video is stricter still: "Unsupported output video duration
+    # 6 seconds, supported durations are [8] for feature reference_to_video".
+    # A scene featuring the creator therefore has to be exactly 8 seconds.
+    reference_supported_durations: tuple[int, ...] | None = (8,)
 
     # Veo caps subject references at three images.
     MAX_REFERENCE_IMAGES = 3

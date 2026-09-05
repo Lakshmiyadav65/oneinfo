@@ -24,6 +24,11 @@ class VideoProvider(Protocol):
     # anything else outright, so storyboards are snapped to this before a
     # single (billable) request goes out.
     supported_durations: tuple[int, ...] | None
+    # Clip lengths allowed when a request carries reference images. Veo
+    # constrains this separately and far more tightly than plain
+    # text-to-video, so it cannot be folded into the field above. None means
+    # "same as supported_durations".
+    reference_supported_durations: tuple[int, ...] | None
 
     async def create_video_job(self, request: VideoGenerationRequest) -> str: ...
 

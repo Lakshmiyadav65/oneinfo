@@ -40,7 +40,8 @@ async def set_scene_on_camera(
     payload: SceneOnCameraIn,
     creator: Creator = Depends(get_current_creator),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> Storyboard:
     return await storyboard_service.set_scene_on_camera(
-        db, creator.id, project_id, scene_id, payload.features_creator
+        db, settings, creator.id, project_id, scene_id, payload.features_creator
     )

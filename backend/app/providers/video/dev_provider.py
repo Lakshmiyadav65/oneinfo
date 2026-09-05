@@ -23,6 +23,7 @@ class DevVideoProvider:
 
     # FFmpeg renders any length, so dev runs are never snapped.
     supported_durations: tuple[int, ...] | None = None
+    reference_supported_durations: tuple[int, ...] | None = None
 
     def __init__(self, settings: Settings):
         self._settings = settings
