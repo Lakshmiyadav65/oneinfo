@@ -59,7 +59,7 @@ export default function CreateVideoPage() {
       <CreatorFacePrompt />
 
       <Card>
-        <CardContent className="space-y-4 p-6">
+        <CardContent className="space-y-6 p-6 sm:p-8">
           {/*
             First, above the idea. Language is chosen here rather than at the
             later Language step because hooks are the first thing generated,
@@ -68,9 +68,9 @@ export default function CreateVideoPage() {
             asking too late. It leads the form for the same reason: it frames
             the language the idea itself gets written in.
           */}
-          <div className="space-y-1.5">
+          <div className="space-y-2.5">
             <Label>Language</Label>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-3">
               {PROJECT_LANGUAGES.map((option) => (
                 <button
                   key={option.value}
@@ -78,7 +78,7 @@ export default function CreateVideoPage() {
                   onClick={() => setLanguage(option.value)}
                   aria-pressed={language === option.value}
                   className={cn(
-                    "relative rounded-md border px-3 py-2 pr-9 text-left text-sm transition-colors",
+                    "relative rounded-md border px-4 py-3 pr-10 text-left text-sm transition-colors",
                     // A 5% tint reads as "unselected" on a dark background —
                     // the selected state has to carry a ring and a mark, not
                     // just a wash the eye can miss.
@@ -99,7 +99,7 @@ export default function CreateVideoPage() {
             </div>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="project-title">Project title (optional)</Label>
             <Input
               id="project-title"
@@ -108,7 +108,7 @@ export default function CreateVideoPage() {
               onChange={(e) => setTitle(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="idea">Idea</Label>
             <Textarea
               id="idea"
@@ -119,7 +119,7 @@ export default function CreateVideoPage() {
             />
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex justify-end pt-2">
             <Button
               onClick={handleSubmit}
               isLoading={isSubmitting}
