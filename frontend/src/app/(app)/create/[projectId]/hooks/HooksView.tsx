@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Check } from "lucide-react";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
 import {
@@ -157,10 +158,12 @@ export function HooksView({ projectId }: { projectId: string }) {
                   onClick={() => handleSelect(hook.id)}
                   disabled={selectingId !== null}
                   className={cn(
-                    "w-full rounded-md border px-4 py-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                    "relative w-full rounded-md border px-4 py-3 pr-10 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                    // Same reasoning as the language picker: a 5% tint is not
+                    // a visible selection on a dark background.
                     hook.is_selected
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:bg-muted/50"
+                      ? "border-primary bg-primary/15 ring-2 ring-primary"
+                      : "border-border hover:border-ring hover:bg-muted/50"
                   )}
                 >
                   <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -173,6 +176,11 @@ export function HooksView({ projectId }: { projectId: string }) {
                   <p className="font-medium text-foreground">{hook.text}</p>
                   {hook.reason && (
                     <p className="mt-1.5 text-xs text-muted-foreground">{hook.reason}</p>
+                  )}
+                  {hook.is_selected && (
+                    <span className="absolute right-3 top-3 flex size-5 items-center justify-center rounded-full bg-primary">
+                      <Check className="size-3.5 text-primary-foreground" aria-hidden="true" />
+                    </span>
                   )}
                 </button>
               ))}

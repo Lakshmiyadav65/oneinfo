@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Check } from "lucide-react";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Label } from "@/components/ui/Label";
@@ -94,14 +95,22 @@ export default function CreateVideoPage() {
                   onClick={() => setLanguage(option.value)}
                   aria-pressed={language === option.value}
                   className={cn(
-                    "rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                    "relative rounded-md border px-3 py-2 pr-9 text-left text-sm transition-colors",
+                    // A 5% tint reads as "unselected" on a dark background —
+                    // the selected state has to carry a ring and a mark, not
+                    // just a wash the eye can miss.
                     language === option.value
-                      ? "border-primary bg-primary/5 text-foreground"
-                      : "border-border text-muted-foreground hover:bg-muted/50"
+                      ? "border-primary bg-primary/15 text-foreground ring-2 ring-primary"
+                      : "border-border text-muted-foreground hover:border-ring hover:bg-muted/50"
                   )}
                 >
                   <span className="block font-medium">{option.label}</span>
                   <span className="block text-xs text-muted-foreground">{option.hint}</span>
+                  {language === option.value && (
+                    <span className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full bg-primary">
+                      <Check className="size-3.5 text-primary-foreground" aria-hidden="true" />
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
