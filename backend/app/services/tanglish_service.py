@@ -12,6 +12,13 @@ from app.models.tanglish import LocalizedLanguage, TanglishScript
 from app.providers.llm import get_llm_provider
 from app.services import project_service, script_service
 
+# english has no localized counterpart — the script is already English, so a
+# creator on an English project picks a target language explicitly.
+_PROJECT_LANGUAGE_TO_LOCALIZED = {
+    "tenglish": LocalizedLanguage.tenglish,
+    "telugu": LocalizedLanguage.telugu,
+}
+
 
 async def get_latest_tanglish(db: AsyncSession, project_id: uuid.UUID) -> TanglishScript | None:
     result = await db.execute(
@@ -28,9 +35,15 @@ async def generate_tanglish(
     settings: Settings,
     creator_id: str,
     project_id: uuid.UUID,
-    language: LocalizedLanguage = LocalizedLanguage.tanglish,
+    language: LocalizedLanguage | None = None,
 ) -> TanglishScript:
     project = await project_service.get_owned_project(db, creator_id, project_id)
+    # Follow the project's language unless the creator asked for a specific
+    # one here. Defaulting to Tamil regardless of the project meant a Telugu
+    # creator's approved script came back localized into a language their
+    # audience does not read.
+    if language is None:
+        language = _PROJECT_LANGUAGE_TO_LOCALIZED.get(project.language, LocalizedLanguage.tenglish)
     english_script = await script_service.get_current_script(db, creator_id, project_id)
     if english_script.status != ContentStatus.approved:
         raise ValidationAppError(

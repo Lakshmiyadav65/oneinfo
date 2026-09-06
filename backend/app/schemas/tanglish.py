@@ -20,7 +20,10 @@ class TanglishOut(BaseModel):
 
 
 class TanglishGenerateIn(BaseModel):
-    language: LocalizedLanguage = LocalizedLanguage.tanglish
+    # None means "follow the project's language". An explicit value lets a
+    # creator localize into something other than what the project was
+    # written in.
+    language: LocalizedLanguage | None = None
 
 
 class TanglishUpdateIn(BaseModel):

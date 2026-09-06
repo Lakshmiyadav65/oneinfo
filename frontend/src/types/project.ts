@@ -8,11 +8,13 @@ export type ProjectStatus =
   | "completed"
   | "failed";
 
-export type ProjectLanguage = "english" | "tanglish" | "telugu";
+export type ProjectLanguage = "english" | "tenglish" | "telugu";
 
 export const PROJECT_LANGUAGES: { value: ProjectLanguage; label: string; hint: string }[] = [
   { value: "english", label: "English", hint: "Plain English" },
-  { value: "tanglish", label: "Tanglish", hint: "Telugu in Latin script, the way people talk" },
+  // Tenglish, not Tanglish — Tanglish is Tamil-English, and the localization
+  // step reads this value.
+  { value: "tenglish", label: "Tenglish", hint: "Telugu in Latin script, the way people talk" },
   { value: "telugu", label: "Telugu", hint: "Telugu script" },
 ];
 

@@ -10,7 +10,7 @@ from app.models.project import ProjectStatus
 class ProjectCreateIn(BaseModel):
     idea: str
     title: str | None = None
-    language: Literal["english", "tanglish", "telugu"] = "english"
+    language: Literal["english", "tenglish", "telugu"] = "english"
 
 
 class ProjectOut(BaseModel):
@@ -40,4 +40,4 @@ class IdeaSuggestionsOut(BaseModel):
 
 
 class IdeaSuggestionsIn(BaseModel):
-    language: Literal["english", "tanglish", "telugu"] = "english"
+    language: Literal["english", "tenglish", "telugu"] = "english"

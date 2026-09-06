@@ -6,8 +6,8 @@ from app.schemas.agents import HookList, ResearchContext
 
 _LANGUAGE_INSTRUCTIONS = {
     "english": "Write every hook in English.",
-    "tanglish": (
-        "Write every hook in Tanglish — spoken Telugu written in Latin "
+    "tenglish": (
+        "Write every hook in Tenglish — spoken Telugu written in Latin "
         "script, mixing in the English words a Telugu speaker would "
         "naturally use (exam, resources, comment, free). This is how the "
         "creator's audience actually talks: do not write formal Telugu "
@@ -30,7 +30,7 @@ async def run_hook_agent(
     prompt = (
         "SYSTEM: You are OneInfo's hook-writing assistant. Generate "
         f"{count} distinct, scroll-stopping opening hooks for a short "
-        "video. Each hook needs a short 'type' label (e.g. curiosity, "
+        "video. Produce exactly that many. Each hook needs a short 'type' label (e.g. curiosity, "
         "shock, question, bold-claim) and a one-line 'reason' naming what "
         "makes it work — credibility, curiosity gap, urgency, specificity. "
         "Set 'recommended_index' to the strongest hook; commit to one "

@@ -6,8 +6,8 @@ from app.schemas.agents import IdeaSuggestionList
 
 _LANGUAGE_NOTE = {
     "english": "Write the ideas in English.",
-    "tanglish": (
-        "Write each idea in Tanglish — spoken Telugu in Latin script, mixing "
+    "tenglish": (
+        "Write each idea in Tenglish — spoken Telugu in Latin script, mixing "
         "in the English words a Telugu speaker naturally uses."
     ),
     "telugu": "Write the ideas in Telugu, using Telugu script.",
