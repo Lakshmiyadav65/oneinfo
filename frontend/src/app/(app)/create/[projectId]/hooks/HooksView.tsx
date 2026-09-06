@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, Star } from "lucide-react";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
 import {
@@ -150,38 +150,83 @@ export function HooksView({ projectId }: { projectId: string }) {
           )}
 
           {hooksQuery.status === "success" && hooks.length > 0 && (
-            <div className="space-y-2">
-              {hooks.map((hook: Hook) => (
+            <div className="space-y-3">
+              {hooks.map((hook: Hook, index: number) => (
                 <button
                   key={hook.id}
                   type="button"
                   onClick={() => handleSelect(hook.id)}
                   disabled={selectingId !== null}
+                  aria-pressed={hook.is_selected}
                   className={cn(
-                    "relative w-full rounded-md border px-4 py-3 pr-10 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                    // Same reasoning as the language picker: a 5% tint is not
-                    // a visible selection on a dark background.
+                    "group relative flex w-full gap-3 rounded-lg border p-4 text-left transition-all",
+                    "disabled:cursor-not-allowed disabled:opacity-60",
+                    // Three tiers, so the list is not five identical rows:
+                    // the chosen one, the one the agent argues for, and the
+                    // rest. Hover lifts slightly so the cards read as
+                    // clickable rather than as static blocks of text.
                     hook.is_selected
                       ? "border-primary bg-primary/15 ring-2 ring-primary"
-                      : "border-border hover:border-ring hover:bg-muted/50"
+                      : hook.is_recommended
+                        ? "border-primary/40 bg-primary/5 hover:-translate-y-px hover:border-primary hover:shadow-md"
+                        : "border-border hover:-translate-y-px hover:border-ring hover:bg-muted/40 hover:shadow-md"
                   )}
                 >
-                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {hook.type}
+                  <span
+                    className={cn(
+                      "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors",
+                      hook.is_selected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary"
+                    )}
+                    aria-hidden="true"
+                  >
+                    {index + 1}
+                  </span>
+
+                  <span className="min-w-0 flex-1">
+                    <span className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        {hook.type}
+                      </span>
+                      {hook.is_recommended && (
+                        <Badge variant="success">
+                          <Star className="mr-1 size-3 fill-current" aria-hidden="true" />
+                          Recommended
+                        </Badge>
+                      )}
+                      {hook.is_custom && <Badge>Yours</Badge>}
                     </span>
-                    {hook.is_recommended && <Badge variant="success">Recommended</Badge>}
-                    {hook.is_custom && <Badge>Yours</Badge>}
-                  </div>
-                  <p className="font-medium text-foreground">{hook.text}</p>
-                  {hook.reason && (
-                    <p className="mt-1.5 text-xs text-muted-foreground">{hook.reason}</p>
-                  )}
-                  {hook.is_selected && (
-                    <span className="absolute right-3 top-3 flex size-5 items-center justify-center rounded-full bg-primary">
-                      <Check className="size-3.5 text-primary-foreground" aria-hidden="true" />
+
+                    <span className="block text-[15px] font-medium leading-relaxed text-foreground">
+                      {hook.text}
                     </span>
-                  )}
+
+                    {hook.reason && (
+                      <span className="mt-2 block border-t border-border/60 pt-2 text-xs italic text-muted-foreground">
+                        {hook.reason}
+                      </span>
+                    )}
+                  </span>
+
+                  {/*
+                    A radio-style target, empty until chosen. An affordance
+                    that is visible before you click is what tells someone
+                    these are options rather than a list of results.
+                  */}
+                  <span
+                    className={cn(
+                      "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                      hook.is_selected
+                        ? "border-primary bg-primary"
+                        : "border-border group-hover:border-primary"
+                    )}
+                    aria-hidden="true"
+                  >
+                    {hook.is_selected && (
+                      <Check className="size-3 text-primary-foreground" aria-hidden="true" />
+                    )}
+                  </span>
                 </button>
               ))}
             </div>
