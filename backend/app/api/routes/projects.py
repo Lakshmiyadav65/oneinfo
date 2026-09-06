@@ -14,6 +14,7 @@ from app.schemas.project import (
     IdeaSuggestionsOut,
     ProjectCreateIn,
     ProjectOut,
+    ProjectUpdateIn,
 )
 from app.services import idea_service, project_service
 
@@ -66,3 +67,13 @@ async def get_project(
     db: AsyncSession = Depends(get_db),
 ) -> Project:
     return await project_service.get_owned_project(db, creator.id, project_id)
+
+
+@router.patch("/{project_id}", response_model=ProjectOut)
+async def update_project(
+    project_id: uuid.UUID,
+    payload: ProjectUpdateIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> Project:
+    return await project_service.update_language(db, creator.id, project_id, payload.language)

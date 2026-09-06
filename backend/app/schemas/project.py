@@ -13,6 +13,10 @@ class ProjectCreateIn(BaseModel):
     language: Literal["english", "tenglish", "telugu"] = "english"
 
 
+class ProjectUpdateIn(BaseModel):
+    language: Literal["english", "tenglish", "telugu"]
+
+
 class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

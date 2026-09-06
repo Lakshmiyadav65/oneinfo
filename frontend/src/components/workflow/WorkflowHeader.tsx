@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
+import { LanguageSwitcher } from "@/components/workflow/LanguageSwitcher";
 import { Badge, type BadgeProps } from "@/components/ui/Badge";
 import { CREATE_STEPS, stepIndex, type CreateStepKey } from "@/lib/workflow/steps";
 import type { Project } from "@/types/project";
@@ -36,7 +37,15 @@ export function WorkflowHeader({
           </Link>
           <h2 className="text-xl font-semibold text-foreground">{project.title}</h2>
         </div>
-        <Badge variant={STATUS_VARIANT[project.status]}>{project.status}</Badge>
+        <div className="flex items-center gap-2">
+          {/*
+            Reachable from every step, not just creation. Someone three steps
+            in who realises the language is wrong should not have to start a
+            new project to change it.
+          */}
+          <LanguageSwitcher projectId={project.id} language={project.language} />
+          <Badge variant={STATUS_VARIANT[project.status]}>{project.status}</Badge>
+        </div>
       </div>
       <WorkflowStepper steps={CREATE_STEPS} activeIndex={stepIndex(activeStep)} />
     </div>

@@ -32,3 +32,14 @@ export async function createProject(
 export function suggestIdeas(language: ProjectLanguage): Promise<IdeaSuggestions> {
   return api.post<IdeaSuggestions>("/projects/idea-suggestions", { language });
 }
+
+/**
+ * Changes the language later steps generate in. Existing hooks and scripts
+ * are left as they are — see project_service.update_language.
+ */
+export function updateProjectLanguage(
+  projectId: string,
+  language: ProjectLanguage
+): Promise<Project> {
+  return api.patch<Project>(`/projects/${projectId}`, { language });
+}

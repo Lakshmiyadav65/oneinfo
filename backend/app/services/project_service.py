@@ -47,3 +47,21 @@ async def get_owned_project(db: AsyncSession, creator_id: str, project_id: uuid.
     if project is None:
         raise NotFoundError("Project not found.")
     return project
+
+
+async def update_language(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, language: str
+) -> Project:
+    """
+    Changes the language later steps generate in.
+
+    Deliberately leaves existing hooks and scripts alone. They were written
+    in the old language and translating them here would silently rewrite
+    work the creator may have already approved — the new language applies
+    from the next generation onward.
+    """
+    project = await get_owned_project(db, creator_id, project_id)
+    project.language = language
+    await db.commit()
+    await db.refresh(project)
+    return project
