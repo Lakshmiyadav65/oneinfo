@@ -60,30 +60,13 @@ export default function CreateVideoPage() {
 
       <Card>
         <CardContent className="space-y-4 p-6">
-          <div className="space-y-1.5">
-            <Label htmlFor="project-title">Project title (optional)</Label>
-            <Input
-              id="project-title"
-              placeholder="e.g. Weekend recipe series #1"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="idea">Idea</Label>
-            <Textarea
-              id="idea"
-              rows={5}
-              placeholder="What's the video about? Describe your idea in a few sentences."
-              value={idea}
-              onChange={(e) => setIdea(e.target.value)}
-            />
-          </div>
           {/*
-            Language is chosen here, not at the later Language step. Hooks
-            are the first thing generated, and a creator whose audience is
-            Telugu cannot judge an English hook without translating it first
-            — so asking after the hooks exist is asking too late.
+            First, above the idea. Language is chosen here rather than at the
+            later Language step because hooks are the first thing generated,
+            and a creator whose audience is Telugu cannot judge an English
+            hook without translating it — asking after the hooks exist is
+            asking too late. It leads the form for the same reason: it frames
+            the language the idea itself gets written in.
           */}
           <div className="space-y-1.5">
             <Label>Language</Label>
@@ -114,6 +97,26 @@ export default function CreateVideoPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="project-title">Project title (optional)</Label>
+            <Input
+              id="project-title"
+              placeholder="e.g. Weekend recipe series #1"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="idea">Idea</Label>
+            <Textarea
+              id="idea"
+              rows={5}
+              placeholder="What's the video about? Describe your idea in a few sentences."
+              value={idea}
+              onChange={(e) => setIdea(e.target.value)}
+            />
           </div>
 
           <div className="flex justify-end">
