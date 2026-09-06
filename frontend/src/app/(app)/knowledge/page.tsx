@@ -1,8 +1,10 @@
 "use client";
 
-import { BookOpen, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BookOpen, Plus, Trash2 } from "lucide-react";
 import { useAsyncData } from "@/hooks/useAsyncData";
-import { listKnowledge } from "@/lib/api/knowledge";
+import { deleteKnowledge, listKnowledge } from "@/lib/api/knowledge";
+import { AddKnowledgeDialog } from "@/components/knowledge/AddKnowledgeDialog";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -20,6 +22,30 @@ const STATUS_VARIANT = {
 export default function KnowledgePage() {
   const { toast } = useToast();
   const knowledge = useAsyncData(listKnowledge);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const items = knowledge.status === "success" ? knowledge.data : [];
+  const hasProcessing = items.some((item) => item.status === "processing");
+
+  // Ingestion (extract, chunk, embed) runs in the background after the
+  // request returns, so a freshly added document lands here as "processing".
+  // Poll only while something is actually in flight.
+  const { retry } = knowledge;
+  useEffect(() => {
+    if (!hasProcessing) return;
+    const timer = setInterval(retry, 3000);
+    return () => clearInterval(timer);
+  }, [hasProcessing, retry]);
+
+  async function handleDelete(id: string, title: string) {
+    try {
+      await deleteKnowledge(id);
+      toast({ title: "Removed", description: `"${title}" is no longer used.` });
+      knowledge.retry();
+    } catch {
+      toast({ title: "Couldn't remove that", description: "Please try again." });
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -30,18 +56,17 @@ export default function KnowledgePage() {
             The content you add here will help OneInfo create content in your style.
           </p>
         </div>
-        <Button
-          onClick={() =>
-            toast({
-              title: "Not available yet",
-              description: "Knowledge upload lands in a later build.",
-            })
-          }
-        >
+        <Button onClick={() => setDialogOpen(true)}>
           <Plus className="size-4" />
           Add Knowledge
         </Button>
       </div>
+
+      <AddKnowledgeDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSaved={knowledge.retry}
+      />
 
       {knowledge.status === "loading" && (
         <div className="space-y-2">
@@ -58,7 +83,8 @@ export default function KnowledgePage() {
         <EmptyState
           icon={BookOpen}
           title="No knowledge added yet"
-          description="Add documents or notes so OneInfo can create content in your style."
+          description="Paste a chat or upload a document so OneInfo can create content in your style."
+          action={<Button onClick={() => setDialogOpen(true)}>Add Knowledge</Button>}
         />
       )}
 
@@ -66,12 +92,25 @@ export default function KnowledgePage() {
         <div className="space-y-2">
           {knowledge.data.map((item) => (
             <Card key={item.id}>
-              <CardContent className="flex items-center justify-between p-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{item.title}</p>
+              <CardContent className="flex items-center justify-between gap-3 p-4">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
                   <p className="text-xs uppercase text-muted-foreground">{item.source_type}</p>
+                  {item.status === "failed" && item.error_message && (
+                    <p className="mt-1 text-xs text-destructive">{item.error_message}</p>
+                  )}
                 </div>
-                <Badge variant={STATUS_VARIANT[item.status]}>{item.status}</Badge>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant={STATUS_VARIANT[item.status]}>{item.status}</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => void handleDelete(item.id, item.title)}
+                    aria-label={`Remove ${item.title}`}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}

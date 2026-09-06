@@ -47,3 +47,12 @@ class StoryboardOutput(BaseModel):
 class QAResult(BaseModel):
     passed: bool
     issues: list[str]
+
+
+class StructuredKnowledgeSection(BaseModel):
+    title: str
+    content: str
+
+
+class StructuredKnowledge(BaseModel):
+    sections: list[StructuredKnowledgeSection] = Field(min_length=1, max_length=15)

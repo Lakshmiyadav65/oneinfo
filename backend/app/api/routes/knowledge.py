@@ -4,14 +4,26 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.knowledge_structuring_agent import (
+    MAX_STRUCTURING_CHARS,
+    run_knowledge_structuring_agent,
+)
 from app.auth.dependencies import get_current_creator
 from app.core.config import Settings, get_settings
 from app.core.errors import ValidationAppError
 from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.knowledge import KnowledgeDocument, KnowledgeSourceType
+from app.providers.llm import get_llm_provider
 from app.providers.storage import get_storage_provider
-from app.schemas.knowledge import KnowledgeDocumentOut, KnowledgeTextIn
+from app.schemas.knowledge import (
+    KnowledgeBulkIn,
+    KnowledgeDocumentOut,
+    KnowledgeSectionOut,
+    KnowledgeStructureIn,
+    KnowledgeStructureOut,
+    KnowledgeTextIn,
+)
 from app.services import knowledge_service
 from app.services.knowledge_processing import process_knowledge_document
 
@@ -75,6 +87,52 @@ async def upload_knowledge(
     )
     background_tasks.add_task(process_knowledge_document, document.id, None)
     return document
+
+
+@router.post("/structure", response_model=KnowledgeStructureOut)
+async def structure_knowledge(
+    payload: KnowledgeStructureIn,
+    creator: Creator = Depends(get_current_creator),
+    settings: Settings = Depends(get_settings),
+) -> KnowledgeStructureOut:
+    """
+    Proposes a split of a raw paste into topic-separated documents.
+
+    Deliberately saves nothing: the creator reviews and edits the proposal,
+    then commits it via POST /knowledge/bulk. Storing first and cleaning up
+    after would leave a bad split in retrieval for as long as it took them
+    to notice.
+    """
+    if not payload.content.strip():
+        raise ValidationAppError("Paste some content first.")
+
+    llm = get_llm_provider(settings)
+    structured = await run_knowledge_structuring_agent(llm, raw_text=payload.content)
+    return KnowledgeStructureOut(
+        sections=[
+            KnowledgeSectionOut(title=section.title, content=section.content)
+            for section in structured.sections
+        ],
+        truncated=len(payload.content) > MAX_STRUCTURING_CHARS,
+    )
+
+
+@router.post("/bulk", response_model=list[KnowledgeDocumentOut], status_code=201)
+async def add_bulk_knowledge(
+    payload: KnowledgeBulkIn,
+    background_tasks: BackgroundTasks,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> list[KnowledgeDocument]:
+    """Commits the reviewed sections from /structure as separate documents."""
+    documents = []
+    for entry in payload.documents:
+        document = await knowledge_service.create_pending_document(
+            db, creator.id, entry.title, KnowledgeSourceType.text, storage_key=None
+        )
+        background_tasks.add_task(process_knowledge_document, document.id, entry.content)
+        documents.append(document)
+    return documents
 
 
 @router.delete("/{document_id}", status_code=204)

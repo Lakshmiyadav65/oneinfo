@@ -9,3 +9,13 @@ export type KnowledgeItem = {
   error_message: string | null;
   created_at: string;
 };
+
+export type KnowledgeSection = {
+  title: string;
+  content: string;
+};
+
+export type KnowledgeStructureResult = {
+  sections: KnowledgeSection[];
+  truncated: boolean;
+};
