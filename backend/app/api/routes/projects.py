@@ -19,7 +19,9 @@ async def create_project(
     creator: Creator = Depends(get_current_creator),
     db: AsyncSession = Depends(get_db),
 ) -> Project:
-    return await project_service.create_project(db, creator.id, payload.idea, payload.title)
+    return await project_service.create_project(
+        db, creator.id, payload.idea, payload.title, payload.language
+    )
 
 
 @router.get("", response_model=list[ProjectOut])

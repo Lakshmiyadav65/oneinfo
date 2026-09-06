@@ -29,6 +29,10 @@ class Project(Base):
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     idea: Mapped[str] = mapped_column(Text, nullable=False)
+    # Output language for hooks and script. Chosen up front rather than at
+    # the later Language step: a creator whose audience is Telugu cannot
+    # judge an English hook without translating it first.
+    language: Mapped[str] = mapped_column(String, nullable=False, default="english")
     status: Mapped[ProjectStatus] = mapped_column(
         String, nullable=False, default=ProjectStatus.draft, index=True
     )

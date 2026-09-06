@@ -11,10 +11,16 @@ class ResearchContext(BaseModel):
 class HookCandidate(BaseModel):
     text: str
     type: str
+    # One line on why this hook earns the scroll-stop, so the creator can
+    # choose on reasoning instead of vibes.
+    reason: str
 
 
 class HookList(BaseModel):
     hooks: list[HookCandidate] = Field(min_length=3, max_length=5)
+    # Index into `hooks` of the strongest option. The agent commits to a pick
+    # rather than leaving five equal-looking choices.
+    recommended_index: int = 0
 
 
 class ScriptOutput(BaseModel):

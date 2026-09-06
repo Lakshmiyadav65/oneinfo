@@ -16,3 +16,8 @@ export async function regenerateHooks(projectId: string): Promise<Hook[]> {
 export async function selectHook(projectId: string, hookId: string): Promise<Hook> {
   return api.post<Hook>(`/projects/${projectId}/hooks/${hookId}/select`);
 }
+
+/** Files a hook the creator wrote themselves alongside the generated ones. */
+export function addCustomHook(projectId: string, text: string): Promise<Hook> {
+  return api.post<Hook>(`/projects/${projectId}/hooks`, { text });
+}

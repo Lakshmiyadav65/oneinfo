@@ -32,7 +32,9 @@ async def generate_hooks(
             angle=project.research_angle or "",
         )
     else:
-        research = await run_research_agent(llm, idea=project.idea, knowledge_chunks=knowledge_texts)
+        research = await run_research_agent(
+            llm, idea=project.idea, knowledge_chunks=knowledge_texts
+        )
         project.research_topic = research.topic
         project.research_audience = research.audience
         project.research_goal = research.goal
@@ -44,15 +46,26 @@ async def generate_hooks(
         research=research,
         knowledge_chunks=knowledge_texts,
         count=settings.hook_candidate_count,
+        language=project.language,
     )
 
-    # Regenerating starts hook selection over from scratch.
-    await db.execute(delete(Hook).where(Hook.project_id == project.id))
+    # Regenerating replaces the agent's suggestions but keeps hooks the
+    # creator wrote themselves — those took effort and were never the thing
+    # they wanted rerolled.
+    await db.execute(delete(Hook).where(Hook.project_id == project.id, Hook.is_custom.is_(False)))
     project.selected_hook_id = None
+    await db.execute(update(Hook).where(Hook.project_id == project.id).values(is_selected=False))
 
     new_hooks = [
-        Hook(project_id=project.id, creator_id=creator_id, text=h.text, type=h.type)
-        for h in hook_list.hooks
+        Hook(
+            project_id=project.id,
+            creator_id=creator_id,
+            text=h.text,
+            type=h.type,
+            reason=h.reason,
+            is_recommended=(index == hook_list.recommended_index),
+        )
+        for index, h in enumerate(hook_list.hooks)
     ]
     db.add_all(new_hooks)
 
@@ -96,6 +109,35 @@ async def select_hook(
     )
     hook.is_selected = True
     project.selected_hook_id = hook.id
+    await db.commit()
+    await db.refresh(hook)
+    return hook
+
+
+async def add_custom_hook(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, text: str
+) -> Hook:
+    """
+    Files a hook the creator wrote themselves alongside the generated ones.
+
+    They often arrive with a hook already written — from a previous chat, or
+    just from knowing their audience — and had no way to carry it into the
+    pipeline short of regenerating until something close came up.
+    """
+    project = await project_service.get_owned_project(db, creator_id, project_id)
+
+    hook = Hook(
+        project_id=project.id,
+        creator_id=creator_id,
+        text=text.strip(),
+        type="your own",
+        is_custom=True,
+    )
+    db.add(hook)
+
+    if project.status == ProjectStatus.draft:
+        project.status = ProjectStatus.hooks
+
     await db.commit()
     await db.refresh(hook)
     return hook

@@ -62,10 +62,23 @@ class DevLLMProvider:
         if schema is HookList:
             return HookList(
                 hooks=[
-                    HookCandidate(text=f"You won't believe this about {snippet}...", type="curiosity"),
-                    HookCandidate(text=f"Here's what nobody tells you about {snippet}.", type="shock"),
-                    HookCandidate(text=f"Why does {snippet} actually matter?", type="question"),
-                ]
+                    HookCandidate(
+                        text=f"You won't believe this about {snippet}...",
+                        type="curiosity",
+                        reason="[DEV MODE] Opens a curiosity gap the viewer wants closed.",
+                    ),
+                    HookCandidate(
+                        text=f"Here's what nobody tells you about {snippet}.",
+                        type="shock",
+                        reason="[DEV MODE] Promises insider knowledge the viewer lacks.",
+                    ),
+                    HookCandidate(
+                        text=f"Why does {snippet} actually matter?",
+                        type="question",
+                        reason="[DEV MODE] A direct question invites the viewer to answer it.",
+                    ),
+                ],
+                recommended_index=0,
             )
 
         if schema is ScriptOutput:

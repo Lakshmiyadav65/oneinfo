@@ -7,11 +7,18 @@ from app.core.errors import NotFoundError
 from app.models.project import Project, ProjectStatus
 
 
-async def create_project(db: AsyncSession, creator_id: str, idea: str, title: str | None) -> Project:
+async def create_project(
+    db: AsyncSession,
+    creator_id: str,
+    idea: str,
+    title: str | None,
+    language: str = "english",
+) -> Project:
     project = Project(
         creator_id=creator_id,
         title=title or idea[:80],
         idea=idea,
+        language=language,
         status=ProjectStatus.draft,
     )
     db.add(project)

@@ -1,5 +1,5 @@
 import { api, ApiError, ApiNotConfiguredError } from "@/lib/api/client";
-import type { Project } from "@/types/project";
+import type { Project, ProjectLanguage } from "@/types/project";
 
 export async function listProjects(): Promise<Project[]> {
   try {
@@ -20,6 +20,10 @@ export async function getProject(projectId: string): Promise<Project | null> {
   }
 }
 
-export async function createProject(idea: string, title?: string): Promise<Project> {
-  return api.post<Project>("/projects", { idea, title: title || undefined });
+export async function createProject(
+  idea: string,
+  title?: string,
+  language: ProjectLanguage = "english"
+): Promise<Project> {
+  return api.post<Project>("/projects", { idea, title: title || undefined, language });
 }

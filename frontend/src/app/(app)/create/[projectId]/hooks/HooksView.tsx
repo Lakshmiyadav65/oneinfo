@@ -4,10 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
-import { listHooks, generateHooks, regenerateHooks, selectHook } from "@/lib/api/hooks";
+import {
+  listHooks,
+  generateHooks,
+  regenerateHooks,
+  selectHook,
+  addCustomHook,
+} from "@/lib/api/hooks";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Textarea } from "@/components/ui/Textarea";
+import { Label } from "@/components/ui/Label";
+import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -26,6 +35,8 @@ export function HooksView({ projectId }: { projectId: string }) {
   const hooksQuery = useAsyncData(() => listHooks(projectId), [projectId]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectingId, setSelectingId] = useState<string | null>(null);
+  const [ownHook, setOwnHook] = useState("");
+  const [isAddingOwn, setIsAddingOwn] = useState(false);
 
   if (project.status === "loading") {
     return (
@@ -62,6 +73,26 @@ export function HooksView({ projectId }: { projectId: string }) {
       });
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  async function handleAddOwn() {
+    setIsAddingOwn(true);
+    try {
+      const hook = await addCustomHook(projectId, ownHook);
+      setOwnHook("");
+      // Select it immediately: someone who typed out their own hook has
+      // already chosen it — making them click it again is a pointless step.
+      await selectHook(projectId, hook.id);
+      hooksQuery.retry();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't add your hook",
+        description: errorDescription(err),
+      });
+    } finally {
+      setIsAddingOwn(false);
     }
   }
 
@@ -132,12 +163,48 @@ export function HooksView({ projectId }: { projectId: string }) {
                       : "border-border hover:bg-muted/50"
                   )}
                 >
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                      {hook.type}
+                    </span>
+                    {hook.is_recommended && <Badge variant="success">Recommended</Badge>}
+                    {hook.is_custom && <Badge>Yours</Badge>}
+                  </div>
                   <p className="font-medium text-foreground">{hook.text}</p>
-                  <p className="mt-1 text-xs uppercase text-muted-foreground">{hook.type}</p>
+                  {hook.reason && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">{hook.reason}</p>
+                  )}
                 </button>
               ))}
             </div>
           )}
+          {/*
+            Creators often arrive with a hook already written — from a
+            previous chat, or from knowing their audience better than any
+            model does. Without this the only way in was to regenerate until
+            something close came up.
+          */}
+          <div className="space-y-1.5 border-t border-border pt-4">
+            <Label htmlFor="own-hook">Or write your own</Label>
+            <Textarea
+              id="own-hook"
+              rows={2}
+              placeholder="Paste or type a hook you already have."
+              value={ownHook}
+              onChange={(e) => setOwnHook(e.target.value)}
+            />
+            <div className="flex justify-end">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleAddOwn}
+                isLoading={isAddingOwn}
+                disabled={!ownHook.trim()}
+              >
+                Use this hook
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

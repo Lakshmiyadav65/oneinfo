@@ -12,18 +12,21 @@ import { useToast } from "@/components/ui/Toast";
 import { createProject } from "@/lib/api/projects";
 import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
 import { CREATE_STEPS, stepIndex } from "@/lib/workflow/steps";
+import { PROJECT_LANGUAGES, type ProjectLanguage } from "@/types/project";
+import { cn } from "@/lib/utils/cn";
 
 export default function CreateVideoPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
+  const [language, setLanguage] = useState<ProjectLanguage>("english");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit() {
     setIsSubmitting(true);
     try {
-      const project = await createProject(idea, title || undefined);
+      const project = await createProject(idea, title || undefined, language);
       router.push(`/create/${project.id}/hooks`);
     } catch (err) {
       toast({
@@ -75,6 +78,35 @@ export default function CreateVideoPage() {
               onChange={(e) => setIdea(e.target.value)}
             />
           </div>
+          {/*
+            Language is chosen here, not at the later Language step. Hooks
+            are the first thing generated, and a creator whose audience is
+            Telugu cannot judge an English hook without translating it first
+            — so asking after the hooks exist is asking too late.
+          */}
+          <div className="space-y-1.5">
+            <Label>Language</Label>
+            <div className="flex flex-wrap gap-2">
+              {PROJECT_LANGUAGES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setLanguage(option.value)}
+                  aria-pressed={language === option.value}
+                  className={cn(
+                    "rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                    language === option.value
+                      ? "border-primary bg-primary/5 text-foreground"
+                      : "border-border text-muted-foreground hover:bg-muted/50"
+                  )}
+                >
+                  <span className="block font-medium">{option.label}</span>
+                  <span className="block text-xs text-muted-foreground">{option.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex justify-end">
             <Button
               onClick={handleSubmit}
