@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,9 @@ class Project(Base):
     # the later Language step: a creator whose audience is Telugu cannot
     # judge an English hook without translating it first.
     language: Mapped[str] = mapped_column(String, nullable=False, default="english")
+    # True when nobody typed a title, so the research agent's topic may
+    # replace the truncated idea standing in for one.
+    title_is_auto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[ProjectStatus] = mapped_column(
         String, nullable=False, default=ProjectStatus.draft, index=True
     )

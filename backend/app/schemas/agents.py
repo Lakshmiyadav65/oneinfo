@@ -74,3 +74,12 @@ class StructuredKnowledgeSection(BaseModel):
 
 class StructuredKnowledge(BaseModel):
     sections: list[StructuredKnowledgeSection] = Field(min_length=1, max_length=15)
+
+
+class IdeaSuggestion(BaseModel):
+    text: str
+    angle: str
+
+
+class IdeaSuggestionList(BaseModel):
+    ideas: list[IdeaSuggestion] = Field(min_length=1, max_length=8)

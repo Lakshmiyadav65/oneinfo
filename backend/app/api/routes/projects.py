@@ -4,13 +4,40 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_creator
+from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.project import Project
-from app.schemas.project import ProjectCreateIn, ProjectOut
-from app.services import project_service
+from app.schemas.project import (
+    IdeaSuggestionOut,
+    IdeaSuggestionsIn,
+    IdeaSuggestionsOut,
+    ProjectCreateIn,
+    ProjectOut,
+)
+from app.services import idea_service, project_service
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+@router.post("/idea-suggestions", response_model=IdeaSuggestionsOut)
+async def suggest_ideas(
+    payload: IdeaSuggestionsIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> IdeaSuggestionsOut:
+    """
+    Ideas for a creator staring at an empty Idea box. Creates no project —
+    they pick one, edit it, then create as usual.
+    """
+    suggestions, grounded = await idea_service.suggest_ideas(
+        db, settings, creator.id, payload.language
+    )
+    return IdeaSuggestionsOut(
+        ideas=[IdeaSuggestionOut(text=i.text, angle=i.angle) for i in suggestions.ideas],
+        grounded_in_knowledge=grounded,
+    )
 
 
 @router.post("", response_model=ProjectOut, status_code=201)

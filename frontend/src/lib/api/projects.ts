@@ -1,5 +1,5 @@
 import { api, ApiError, ApiNotConfiguredError } from "@/lib/api/client";
-import type { Project, ProjectLanguage } from "@/types/project";
+import type { IdeaSuggestions, Project, ProjectLanguage } from "@/types/project";
 
 export async function listProjects(): Promise<Project[]> {
   try {
@@ -26,4 +26,9 @@ export async function createProject(
   language: ProjectLanguage = "english"
 ): Promise<Project> {
   return api.post<Project>("/projects", { idea, title: title || undefined, language });
+}
+
+/** Ideas for a creator with an empty Idea box. Creates no project. */
+export function suggestIdeas(language: ProjectLanguage): Promise<IdeaSuggestions> {
+  return api.post<IdeaSuggestions>("/projects/idea-suggestions", { language });
 }

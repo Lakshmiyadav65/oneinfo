@@ -26,3 +26,14 @@ export type Project = {
   created_at: string;
   updated_at: string;
 };
+
+export type IdeaSuggestion = {
+  text: string;
+  angle: string;
+};
+
+export type IdeaSuggestions = {
+  ideas: IdeaSuggestion[];
+  /** False when the creator has filed no knowledge, so ideas are generic. */
+  grounded_in_knowledge: boolean;
+};

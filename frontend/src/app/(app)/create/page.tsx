@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, Lightbulb } from "lucide-react";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Label } from "@/components/ui/Label";
@@ -10,10 +10,14 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { createProject } from "@/lib/api/projects";
+import { createProject, suggestIdeas } from "@/lib/api/projects";
 import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
 import { CREATE_STEPS, stepIndex } from "@/lib/workflow/steps";
-import { PROJECT_LANGUAGES, type ProjectLanguage } from "@/types/project";
+import {
+  PROJECT_LANGUAGES,
+  type IdeaSuggestions,
+  type ProjectLanguage,
+} from "@/types/project";
 import { cn } from "@/lib/utils/cn";
 
 export default function CreateVideoPage() {
@@ -23,6 +27,23 @@ export default function CreateVideoPage() {
   const [idea, setIdea] = useState("");
   const [language, setLanguage] = useState<ProjectLanguage>("english");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [suggestions, setSuggestions] = useState<IdeaSuggestions | null>(null);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+
+  async function handleSuggest() {
+    setIsSuggesting(true);
+    try {
+      setSuggestions(await suggestIdeas(language));
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't suggest ideas",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsSuggesting(false);
+    }
+  }
 
   async function handleSubmit() {
     setIsSubmitting(true);
@@ -103,13 +124,24 @@ export default function CreateVideoPage() {
             <Label htmlFor="project-title">Project title (optional)</Label>
             <Input
               id="project-title"
-              placeholder="e.g. Weekend recipe series #1"
+              placeholder="Leave blank and we’ll name it from your idea"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="idea">Idea</Label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label htmlFor="idea">Idea</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSuggest}
+                isLoading={isSuggesting}
+              >
+                <Lightbulb className="size-4" />
+                {suggestions ? "Suggest again" : "No idea? Suggest some"}
+              </Button>
+            </div>
             <Textarea
               id="idea"
               rows={5}
@@ -117,6 +149,32 @@ export default function CreateVideoPage() {
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
             />
+
+            {suggestions && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-muted-foreground">
+                  {suggestions.grounded_in_knowledge
+                    ? "Based on your knowledge and past topics. Click one to use it — you can edit it after."
+                    : "Generic starters — add documents in My Knowledge and these will match your niche."}
+                </p>
+                {suggestions.ideas.map((suggestion, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    // Fills the box rather than submitting: a suggestion is a
+                    // starting point the creator is expected to edit, not a
+                    // finished idea.
+                    onClick={() => setIdea(suggestion.text)}
+                    className="w-full rounded-md border border-border px-4 py-3 text-left transition-colors hover:border-ring hover:bg-muted/50"
+                  >
+                    <span className="block text-xs uppercase tracking-wide text-muted-foreground">
+                      {suggestion.angle}
+                    </span>
+                    <span className="mt-1 block text-sm text-foreground">{suggestion.text}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end pt-2">

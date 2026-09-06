@@ -40,6 +40,13 @@ async def generate_hooks(
         project.research_goal = research.goal
         project.research_angle = research.angle
 
+        # The research agent has just named the topic, which beats the
+        # truncated idea standing in as a title. Only replaces a title
+        # nobody typed.
+        if project.title_is_auto and research.topic.strip():
+            project.title = research.topic.strip()[:80]
+            project.title_is_auto = False
+
     hook_list = await run_hook_agent(
         llm,
         idea=project.idea,

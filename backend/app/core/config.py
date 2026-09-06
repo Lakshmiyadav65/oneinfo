@@ -65,7 +65,8 @@ class Settings(BaseSettings):
     chunk_overlap_words: int = 60
     max_upload_bytes: int = 10 * 1024 * 1024
 
-    hook_candidate_count: int = 4
+    hook_candidate_count: int = 5
+    idea_suggestion_count: int = 5
 
     video_provider: Literal["dev", "veo"] = "dev"
     google_cloud_project: str | None = None

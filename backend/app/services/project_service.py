@@ -14,11 +14,16 @@ async def create_project(
     title: str | None,
     language: str = "english",
 ) -> Project:
+    # A truncated idea is a placeholder, not a title. It stands in until the
+    # research agent runs during hook generation and can name the thing
+    # properly — see hook_service.
+    chosen_title = (title or "").strip()
     project = Project(
         creator_id=creator_id,
-        title=title or idea[:80],
+        title=chosen_title or idea.strip()[:80],
         idea=idea,
         language=language,
+        title_is_auto=not chosen_title,
         status=ProjectStatus.draft,
     )
     db.add(project)
