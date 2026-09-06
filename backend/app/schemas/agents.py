@@ -49,9 +49,21 @@ class QAResult(BaseModel):
     issues: list[str]
 
 
+class KnowledgePart(BaseModel):
+    """One labelled block within a filed document, e.g. Hook / Body / CTA."""
+
+    label: str
+    text: str
+
+
 class StructuredKnowledgeSection(BaseModel):
     title: str
-    content: str
+    # Deliberately unconstrained. Gemini's responseSchema rejects the whole
+    # request (a bare 400 "invalid argument") when minItems/maxItems appear on
+    # two nested array levels at once — sections AND parts. Either alone is
+    # accepted. The outer cap is the one worth keeping, so empty/degenerate
+    # parts are filtered after the call instead.
+    parts: list[KnowledgePart]
 
 
 class StructuredKnowledge(BaseModel):

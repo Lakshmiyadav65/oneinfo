@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.knowledge_structuring_agent import (
     MAX_STRUCTURING_CHARS,
     run_knowledge_structuring_agent,
+    serialise_parts,
 )
 from app.auth.dependencies import get_current_creator
 from app.core.config import Settings, get_settings
@@ -19,6 +20,7 @@ from app.providers.storage import get_storage_provider
 from app.schemas.knowledge import (
     KnowledgeBulkIn,
     KnowledgeDocumentOut,
+    KnowledgePartOut,
     KnowledgeSectionOut,
     KnowledgeStructureIn,
     KnowledgeStructureOut,
@@ -110,7 +112,13 @@ async def structure_knowledge(
     structured = await run_knowledge_structuring_agent(llm, raw_text=payload.content)
     return KnowledgeStructureOut(
         sections=[
-            KnowledgeSectionOut(title=section.title, content=section.content)
+            KnowledgeSectionOut(
+                title=section.title,
+                parts=[
+                    KnowledgePartOut(label=part.label, text=part.text) for part in section.parts
+                ],
+                content=serialise_parts(section.parts),
+            )
             for section in structured.sections
         ],
         truncated=len(payload.content) > MAX_STRUCTURING_CHARS,

@@ -133,8 +133,14 @@ export function AddKnowledgeDialog({ open, onOpenChange, onSaved }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="max-h-[85vh] w-full max-w-2xl overflow-y-auto">
-        <DialogHeader>
+      {/*
+        Three bands: a fixed header, one scrolling body, and a pinned footer.
+        Scrolling the whole dialog instead would carry the title and the save
+        button off-screen — on a short viewport the primary action ends up
+        below the fold, reachable only by scrolling past everything else.
+      */}
+      <DialogContent className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Add knowledge</DialogTitle>
           <DialogDescription>
             Paste a chat, script or notes, or upload a file. OneInfo uses this to write in
@@ -143,8 +149,8 @@ export function AddKnowledgeDialog({ open, onOpenChange, onSaved }: Props) {
         </DialogHeader>
 
         {sections === null && (
-          <>
-            <div className="mb-4 flex gap-2">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="mb-4 flex shrink-0 gap-2">
               <Button
                 variant={mode === "paste" ? "primary" : "secondary"}
                 size="sm"
@@ -162,20 +168,23 @@ export function AddKnowledgeDialog({ open, onOpenChange, onSaved }: Props) {
             </div>
 
             {mode === "paste" ? (
-              <div className="space-y-3">
+              // The textarea is the scroll surface here — it grows to fill the
+              // dialog so a long paste scrolls inside the field, rather than
+              // the field growing and pushing the buttons out of reach.
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
                 <Textarea
                   value={raw}
                   onChange={(e) => setRaw(e.target.value)}
                   placeholder="Paste your whole ChatGPT or Claude conversation here: hooks, scripts, captions, anything you have written."
-                  className="min-h-64 font-mono text-xs"
+                  className="min-h-40 flex-1 resize-none font-mono text-xs"
                   disabled={busy}
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="shrink-0 text-xs text-muted-foreground">
                   A long chat usually covers several topics. OneInfo will split it into
                   separate documents and drop the back-and-forth, so each one can be found on
                   its own later. You will see the split before anything is saved.
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Button onClick={handleOrganise} disabled={busy || !raw.trim()}>
                     {busy ? <Spinner className="size-4" /> : <Sparkles className="size-4" />}
                     Organise and preview
@@ -190,7 +199,7 @@ export function AddKnowledgeDialog({ open, onOpenChange, onSaved }: Props) {
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
                 <input
                   ref={fileInput}
                   type="file"
@@ -212,12 +221,12 @@ export function AddKnowledgeDialog({ open, onOpenChange, onSaved }: Props) {
                 </button>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {sections !== null && (
-          <div className="space-y-4">
-            <div>
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="shrink-0">
               <p className="text-sm font-medium text-foreground">
                 {sections.length} document{sections.length === 1 ? "" : "s"} found
               </p>
@@ -234,12 +243,12 @@ export function AddKnowledgeDialog({ open, onOpenChange, onSaved }: Props) {
             </div>
 
             {sections.length === 0 && (
-              <p className="rounded-md border border-border p-4 text-sm text-muted-foreground">
+              <p className="shrink-0 rounded-md border border-border p-4 text-sm text-muted-foreground">
                 Nothing left to save. Go back and try again.
               </p>
             )}
 
-            <div className="space-y-3">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               {sections.map((section, index) => (
                 <div key={index} className="space-y-2 rounded-lg border border-border p-3">
                   <div className="flex items-center gap-2">
@@ -261,19 +270,56 @@ export function AddKnowledgeDialog({ open, onOpenChange, onSaved }: Props) {
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
+                  {/*
+                    The labels show collapsed, so the shape of a document —
+                    hook, body, CTA — is readable without opening every one.
+                  */}
+                  {section.parts && section.parts.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {section.parts.map((part, partIndex) => (
+                        <span
+                          key={partIndex}
+                          className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                        >
+                          {part.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <details>
                     <summary className="cursor-pointer text-xs text-muted-foreground">
                       Preview content
                     </summary>
-                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs text-foreground">
-                      {section.content}
-                    </pre>
+                    {/*
+                      No inner scroller: a second scrollable box inside the
+                      list means the wheel gets captured by whichever one the
+                      cursor happens to be over. The preview expands in place
+                      and the list scrolls it.
+                    */}
+                    {section.parts && section.parts.length > 0 ? (
+                      <div className="mt-2 space-y-3">
+                        {section.parts.map((part, partIndex) => (
+                          <div key={partIndex}>
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              {part.label}
+                            </p>
+                            <pre className="whitespace-pre-wrap rounded bg-muted p-2 text-xs text-foreground">
+                              {part.text}
+                            </pre>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <pre className="mt-2 whitespace-pre-wrap rounded bg-muted p-2 text-xs text-foreground">
+                        {section.content}
+                      </pre>
+                    )}
                   </details>
                 </div>
               ))}
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex shrink-0 flex-wrap gap-2 border-t border-border pt-3">
               <Button onClick={handleSaveSections} disabled={busy || sections.length === 0}>
                 {busy && <Spinner className="size-4" />}
                 Save {sections.length} document{sections.length === 1 ? "" : "s"}

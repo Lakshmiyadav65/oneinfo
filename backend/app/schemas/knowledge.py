@@ -28,8 +28,17 @@ class KnowledgeStructureIn(BaseModel):
     content: str
 
 
+class KnowledgePartOut(BaseModel):
+    label: str
+    text: str
+
+
 class KnowledgeSectionOut(BaseModel):
     title: str
+    # The labelled blocks, for display. `content` is these same parts
+    # serialised — it is what actually gets stored and embedded, so the
+    # labels survive into retrieval rather than being a preview-only flourish.
+    parts: list[KnowledgePartOut]
     content: str
 
 

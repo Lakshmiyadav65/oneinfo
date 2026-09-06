@@ -10,8 +10,15 @@ export type KnowledgeItem = {
   created_at: string;
 };
 
+export type KnowledgePart = {
+  label: string;
+  text: string;
+};
+
 export type KnowledgeSection = {
   title: string;
+  /** Labelled blocks for display; `content` is these same parts serialised. */
+  parts?: KnowledgePart[];
   content: string;
 };
 

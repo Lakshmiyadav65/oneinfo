@@ -18,9 +18,15 @@ export function structureKnowledge(content: string): Promise<KnowledgeStructureR
   return api.post<KnowledgeStructureResult>("/knowledge/structure", { content });
 }
 
-/** Commits reviewed sections as separate documents. */
+/**
+ * Commits reviewed sections as separate documents. Only title and content
+ * are sent — `parts` is the display breakdown of that same content, so
+ * posting it too would ship every section's text twice.
+ */
 export function saveKnowledgeSections(documents: KnowledgeSection[]): Promise<KnowledgeItem[]> {
-  return api.post<KnowledgeItem[]>("/knowledge/bulk", { documents });
+  return api.post<KnowledgeItem[]>("/knowledge/bulk", {
+    documents: documents.map(({ title, content }) => ({ title, content })),
+  });
 }
 
 export function addKnowledgeText(title: string, content: string): Promise<KnowledgeItem> {
