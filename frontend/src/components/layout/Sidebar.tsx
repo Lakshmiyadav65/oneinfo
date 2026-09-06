@@ -18,13 +18,28 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
       onClick={onNavigate}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+        "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
         isActive
-          ? "bg-accent text-accent-foreground"
+          ? "bg-primary/15 text-foreground"
           : "text-muted-foreground hover:bg-muted hover:text-foreground"
       )}
     >
-      <Icon className="size-4 shrink-0" aria-hidden="true" />
+      {/*
+        A tinted background alone reads as a hover state. The bar anchors the
+        active item to the sidebar edge, and the coloured icon repeats the
+        signal — so which page you are on is legible at a glance rather than
+        inferred from a slightly lighter rectangle.
+      */}
+      {isActive && (
+        <span
+          className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary"
+          aria-hidden="true"
+        />
+      )}
+      <Icon
+        className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-current")}
+        aria-hidden="true"
+      />
       <span className={cn(isActive && "font-semibold")}>{item.label}</span>
     </Link>
   );
@@ -36,8 +51,13 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center px-4">
-        <Link href="/dashboard" className="text-base font-semibold tracking-tight">
-          OneInfo
+        <Link href="/dashboard" className="leading-tight">
+          <span className="block text-base font-semibold tracking-tight text-foreground">
+            OneInfo
+          </span>
+          <span className="block text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+            AI Creator
+          </span>
         </Link>
       </div>
 
