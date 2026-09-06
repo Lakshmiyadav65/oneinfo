@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { ToastProvider } from "@/components/ui/Toast";
 import { TooltipProvider } from "@/components/ui/Tooltip";
+import { DevAnnotations } from "@/components/dev/DevAnnotations";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,7 +37,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <AuthProvider>
           <TooltipProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              {children}
+              {/*
+                Dev-only visual feedback toolbar. This guard stops it
+                rendering in production; the component itself is what keeps
+                the package out of the production bundle — see the note in
+                DevAnnotations on why guarding here is not sufficient.
+              */}
+              {process.env.NODE_ENV === "development" && <DevAnnotations />}
+            </ToastProvider>
           </TooltipProvider>
         </AuthProvider>
       </body>
