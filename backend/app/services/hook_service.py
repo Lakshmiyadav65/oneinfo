@@ -85,7 +85,9 @@ async def generate_hooks(
     await db.commit()
     for hook in new_hooks:
         await db.refresh(hook)
-    return new_hooks
+    # Same order the list endpoint uses, so a caller that renders this
+    # response directly does not show a different order to one that refetches.
+    return sorted(new_hooks, key=lambda h: (not h.is_recommended, h.created_at))
 
 
 async def list_hooks(db: AsyncSession, creator_id: str, project_id: uuid.UUID) -> list[Hook]:
@@ -93,7 +95,10 @@ async def list_hooks(db: AsyncSession, creator_id: str, project_id: uuid.UUID) -
     result = await db.execute(
         select(Hook)
         .where(Hook.project_id == project_id, Hook.creator_id == creator_id)
-        .order_by(Hook.created_at)
+        # The agent's pick leads. It argued for one option, so burying it
+        # third in creation order makes the reader hunt for the answer they
+        # were given — and the position numbers then agree with it.
+        .order_by(Hook.is_recommended.desc(), Hook.created_at)
     )
     return list(result.scalars().all())
 
