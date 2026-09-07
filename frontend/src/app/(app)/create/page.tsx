@@ -49,6 +49,10 @@ export default function CreateVideoPage() {
     setIsSubmitting(true);
     try {
       const project = await createProject(idea, title || undefined, language);
+      // Navigate straight away and let the hooks step generate on arrival.
+      // Generating here first would hold this button for ~25s with nothing
+      // moving; on the next screen the same wait shows the step advance and
+      // skeletons filling in.
       router.push(`/create/${project.id}/hooks`);
     } catch (err) {
       toast({
@@ -56,7 +60,6 @@ export default function CreateVideoPage() {
         title: "Couldn't create project",
         description: err instanceof Error ? err.message : undefined,
       });
-    } finally {
       setIsSubmitting(false);
     }
   }

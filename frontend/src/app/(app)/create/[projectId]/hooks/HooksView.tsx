@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Star } from "lucide-react";
 import { useAsyncData } from "@/hooks/useAsyncData";
@@ -38,6 +38,37 @@ export function HooksView({ projectId }: { projectId: string }) {
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [ownHook, setOwnHook] = useState("");
   const [isAddingOwn, setIsAddingOwn] = useState(false);
+
+  /*
+    Arriving with an empty list and a Generate button made the click on the
+    idea screen look like it had not worked. Generating there instead would
+    hold that button for ~25s with nothing moving, so it happens here, where
+    the step has advanced and skeletons show the work in progress.
+
+    Declared above the early returns below — hook order has to be stable
+    across renders. The ref keeps it to one attempt per mount, including
+    under the double-invoked effects of development mode.
+  */
+  const autoStarted = useRef(false);
+  const hooksStatus = hooksQuery.status;
+  const hookCount = hooksQuery.status === "success" ? hooksQuery.data.length : -1;
+  const refetchHooks = hooksQuery.retry;
+
+  useEffect(() => {
+    if (hooksStatus !== "success" || hookCount !== 0 || autoStarted.current) return;
+    autoStarted.current = true;
+    setIsGenerating(true);
+    generateHooks(projectId)
+      .then(() => refetchHooks())
+      .catch((err: unknown) =>
+        toast({
+          variant: "destructive",
+          title: "Couldn't generate hooks",
+          description: errorDescription(err),
+        })
+      )
+      .finally(() => setIsGenerating(false));
+  }, [hooksStatus, hookCount, projectId, refetchHooks, toast]);
 
   if (project.status === "loading") {
     return (
@@ -142,10 +173,20 @@ export function HooksView({ projectId }: { projectId: string }) {
             <ErrorState description={hooksQuery.message} onRetry={hooksQuery.retry} />
           )}
 
-          {hooksQuery.status === "success" && hooks.length === 0 && (
+          {/* Generating with nothing on screen yet — show the shape of what
+              is coming rather than an empty box for ~25 seconds. */}
+          {isGenerating && hooks.length === 0 && (
+            <div className="space-y-3">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          )}
+
+          {hooksQuery.status === "success" && hooks.length === 0 && !isGenerating && (
             <EmptyState
               title="No hooks yet"
-              description="Generate a few hook options to choose from."
+              description="Use Generate Hooks to write a few options to choose from."
             />
           )}
 
