@@ -50,6 +50,7 @@ export function HooksView({ projectId }: { projectId: string }) {
     under the double-invoked effects of development mode.
   */
   const autoStarted = useRef(false);
+  const ownHookRef = useRef<HTMLTextAreaElement>(null);
   const hooksStatus = hooksQuery.status;
   const hookCount = hooksQuery.status === "success" ? hooksQuery.data.length : -1;
   const refetchHooks = hooksQuery.retry;
@@ -128,6 +129,13 @@ export function HooksView({ projectId }: { projectId: string }) {
     }
   }
 
+  /** Loads a generated hook into the write-your-own box to be reworked. */
+  function startFrom(text: string) {
+    setOwnHook(text);
+    ownHookRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    ownHookRef.current?.focus();
+  }
+
   async function handleSelect(hookId: string) {
     setSelectingId(hookId);
     try {
@@ -193,8 +201,8 @@ export function HooksView({ projectId }: { projectId: string }) {
           {hooksQuery.status === "success" && hooks.length > 0 && (
             <div className="space-y-3">
               {hooks.map((hook: Hook, index: number) => (
+                <div key={hook.id} className="group relative">
                 <button
-                  key={hook.id}
                   type="button"
                   onClick={() => handleSelect(hook.id)}
                   disabled={selectingId !== null}
@@ -269,18 +277,41 @@ export function HooksView({ projectId }: { projectId: string }) {
                     )}
                   </span>
                 </button>
+
+                {/*
+                  A sibling of the card, not a child — a button inside a
+                  button is invalid, and the whole card is already the
+                  select target. Positioned clear of the radio circle.
+                */}
+                <button
+                  type="button"
+                  onClick={() => startFrom(hook.text)}
+                  className="absolute right-11 top-4 rounded px-2 py-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                  title="Copy this into your own hook and edit it"
+                >
+                  Edit
+                </button>
+                </div>
               ))}
             </div>
           )}
           {/*
-            Creators often arrive with a hook already written — from a
-            previous chat, or from knowing their audience better than any
-            model does. Without this the only way in was to regenerate until
-            something close came up.
+            Part of the same list, not a separate section behind a rule:
+            writing your own is one of the options, and the dashed border
+            says so while still marking it as the different one. Creators
+            often arrive with a hook already written, or want to keep half
+            of a generated one — Edit on any card above lands its words
+            here to work from.
           */}
-          <div className="space-y-1.5 border-t border-border pt-4">
-            <Label htmlFor="own-hook">Or write your own</Label>
+          <div className="space-y-2 rounded-lg border border-dashed border-border p-4">
+            <Label htmlFor="own-hook">
+              Write your own
+              <span className="ml-2 font-normal text-muted-foreground">
+                or hit Edit on any hook above to start from its words
+              </span>
+            </Label>
             <Textarea
+              ref={ownHookRef}
               id="own-hook"
               rows={2}
               placeholder="Paste or type a hook you already have."
