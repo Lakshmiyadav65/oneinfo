@@ -1,5 +1,6 @@
 import asyncio
 import json
+import subprocess
 
 from app.core.errors import AppError
 
@@ -10,13 +11,23 @@ class FFmpegError(AppError):
 
 
 async def _run(binary: str, args: list[str], *, error_message: str) -> str:
-    process = await asyncio.create_subprocess_exec(
-        binary,
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await process.communicate()
+    """
+    Runs ffmpeg/ffprobe off the event loop.
+
+    Deliberately not asyncio.create_subprocess_exec: asyncio subprocesses are
+    unsupported on Windows' SelectorEventLoop, which is the policy uvicorn
+    installs there. Every call raised a bare NotImplementedError with an empty
+    message, so the job failed with nothing to go on and no render could ever
+    finish through the server. A thread works on every platform and loop.
+    """
+
+    def _invoke() -> subprocess.CompletedProcess[bytes]:
+        # check=False: a non-zero exit is handled below, where the useful
+        # lines of ffmpeg's stderr are pulled out for the message.
+        return subprocess.run([binary, *args], capture_output=True, check=False)
+
+    process = await asyncio.to_thread(_invoke)
+    stdout, stderr = process.stdout, process.stderr
     if process.returncode != 0:
         # ffmpeg says what actually went wrong in its last few lines; everything
         # before that is banner and stream dumps. Keeping 2000 characters looked
