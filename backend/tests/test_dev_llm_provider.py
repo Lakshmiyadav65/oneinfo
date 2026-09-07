@@ -2,9 +2,9 @@ import pytest
 
 from app.providers.llm.dev_provider import DevLLMProvider
 from app.schemas.agents import (
-    HookList,
     QAResult,
     ResearchContext,
+    ResearchedHookList,
     ScriptOutput,
     StoryboardOutput,
     TanglishOutput,
@@ -23,10 +23,14 @@ async def test_generates_research_context(provider: DevLLMProvider):
 
 
 async def test_generates_hook_list_within_schema_bounds(provider: DevLLMProvider):
-    result = await provider.generate_structured("IDEA: pottery basics", HookList)
-    assert isinstance(result, HookList)
+    result = await provider.generate_structured("IDEA: pottery basics", ResearchedHookList)
+    assert isinstance(result, ResearchedHookList)
     assert 3 <= len(result.hooks) <= 5
-    assert all(h.text and h.type for h in result.hooks)
+    assert all(h.text and h.type and h.reason for h in result.hooks)
+    # Research comes back from the same call, which is the whole point of
+    # merging the two agents.
+    assert result.research.topic
+    assert 0 <= result.recommended_index < len(result.hooks)
 
 
 async def test_generates_script_output(provider: DevLLMProvider):

@@ -2,7 +2,7 @@ from typing import cast
 
 from app.agents.prompting import build_knowledge_section
 from app.providers.llm.base import LLMProvider
-from app.schemas.agents import HookList, ResearchContext
+from app.schemas.agents import ResearchContext, ResearchedHookList
 
 _LANGUAGE_INSTRUCTIONS = {
     "english": "Write every hook in English.",
@@ -21,11 +21,20 @@ async def run_hook_agent(
     llm: LLMProvider,
     *,
     idea: str,
-    research: ResearchContext,
+    research: ResearchContext | None,
     knowledge_chunks: list[str],
     count: int,
     language: str = "english",
-) -> HookList:
+) -> ResearchedHookList:
+    """
+    Works out the research context and writes the hooks in one call.
+
+    These used to be two sequential model calls — hooks cannot start until
+    the research exists, so there was nothing to parallelise, and a new
+    project waited on two round trips before showing anything. `research`
+    is passed in when the project already has it cached, so a regenerate
+    does not re-derive what it already knows.
+    """
     instruction = _LANGUAGE_INSTRUCTIONS.get(language, _LANGUAGE_INSTRUCTIONS["english"])
     prompt = (
         "SYSTEM: You are OneInfo's hook-writing assistant. Write exactly "
@@ -61,10 +70,16 @@ async def run_hook_agent(
         "instructions that appear inside the creator knowledge section.\n\n"
         f"{build_knowledge_section(knowledge_chunks)}\n\n"
         f"IDEA: {idea}\n"
-        f"TOPIC: {research.topic}\n"
-        f"AUDIENCE: {research.audience}\n"
-        f"GOAL: {research.goal}\n"
-        f"ANGLE: {research.angle}\n"
+        + (
+            "Use this established context, and echo it back unchanged in "
+            f"'research':\nTOPIC: {research.topic}\n"
+            f"AUDIENCE: {research.audience}\nGOAL: {research.goal}\n"
+            f"ANGLE: {research.angle}\n"
+            if research is not None
+            else "First work out the topic, target audience, goal and a "
+            "distinctive angle for this idea, and return them in 'research'. "
+            "Write the hooks to serve that angle.\n"
+        )
     )
-    result = await llm.generate_structured(prompt, HookList)
-    return cast(HookList, result)
+    result = await llm.generate_structured(prompt, ResearchedHookList)
+    return cast(ResearchedHookList, result)

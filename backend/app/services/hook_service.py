@@ -4,7 +4,6 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.hook_agent import run_hook_agent
-from app.agents.research_agent import run_research_agent
 from app.core.config import Settings
 from app.core.errors import NotFoundError
 from app.models.hook import Hook
@@ -24,37 +23,41 @@ async def generate_hooks(
     knowledge_texts = [chunk.content for chunk in chunks]
     llm = get_llm_provider(settings)
 
-    if project.research_topic:
-        research = ResearchContext(
+    # Cached from a previous run; None means the agent works it out as part
+    # of the same call that writes the hooks, rather than a second round trip
+    # the creator waits through before anything appears.
+    cached_research = (
+        ResearchContext(
             topic=project.research_topic,
             audience=project.research_audience or "",
             goal=project.research_goal or "",
             angle=project.research_angle or "",
         )
-    else:
-        research = await run_research_agent(
-            llm, idea=project.idea, knowledge_chunks=knowledge_texts
-        )
+        if project.research_topic
+        else None
+    )
+
+    hook_list = await run_hook_agent(
+        llm,
+        idea=project.idea,
+        research=cached_research,
+        knowledge_chunks=knowledge_texts,
+        count=settings.hook_candidate_count,
+        language=project.language,
+    )
+
+    if cached_research is None:
+        research = hook_list.research
         project.research_topic = research.topic
         project.research_audience = research.audience
         project.research_goal = research.goal
         project.research_angle = research.angle
 
-        # The research agent has just named the topic, which beats the
-        # truncated idea standing in as a title. Only replaces a title
-        # nobody typed.
+        # The agent has just named the topic, which beats the truncated idea
+        # standing in as a title. Only replaces a title nobody typed.
         if project.title_is_auto and research.topic.strip():
             project.title = research.topic.strip()[:80]
             project.title_is_auto = False
-
-    hook_list = await run_hook_agent(
-        llm,
-        idea=project.idea,
-        research=research,
-        knowledge_chunks=knowledge_texts,
-        count=settings.hook_candidate_count,
-        language=project.language,
-    )
 
     # Regenerating replaces the agent's suggestions but keeps hooks the
     # creator wrote themselves — those took effort and were never the thing

@@ -4,9 +4,9 @@ from pydantic import BaseModel
 
 from app.schemas.agents import (
     HookCandidate,
-    HookList,
     QAResult,
     ResearchContext,
+    ResearchedHookList,
     ScriptOutput,
     StoryboardOutput,
     StoryboardScene,
@@ -59,8 +59,14 @@ class DevLLMProvider:
                 angle=f"a fresh take on {snippet}",
             )
 
-        if schema is HookList:
-            return HookList(
+        if schema is ResearchedHookList:
+            return ResearchedHookList(
+                research=ResearchContext(
+                    topic=snippet,
+                    audience="[DEV MODE] a general audience",
+                    goal="[DEV MODE] inform and engage",
+                    angle=f"[DEV MODE] a fresh take on {snippet}",
+                ),
                 hooks=[
                     HookCandidate(
                         text=f"You won't believe this about {snippet}...",

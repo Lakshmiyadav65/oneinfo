@@ -16,10 +16,19 @@ class HookCandidate(BaseModel):
     reason: str
 
 
-class HookList(BaseModel):
+class ResearchedHookList(BaseModel):
+    """
+    Research context and hooks from one call.
+
+    Hooks depend on the research, so the two cannot run in parallel — but one
+    model call can produce both, which is what keeps a new project from
+    waiting on two round trips before it sees anything. Only `hooks` is
+    length-constrained: Gemini rejects minItems/maxItems on two nested array
+    levels at once (see StructuredKnowledgeSection).
+    """
+
+    research: ResearchContext
     hooks: list[HookCandidate] = Field(min_length=3, max_length=5)
-    # Index into `hooks` of the strongest option. The agent commits to a pick
-    # rather than leaving five equal-looking choices.
     recommended_index: int = 0
 
 
