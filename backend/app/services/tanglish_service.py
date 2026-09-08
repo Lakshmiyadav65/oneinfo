@@ -114,6 +114,18 @@ async def update_tanglish(
     return tanglish
 
 
+async def reopen_tanglish(db: AsyncSession, creator_id: str, project_id: uuid.UUID) -> TanglishScript:
+    """Puts an approved localization back into draft. See reopen_script."""
+    await project_service.get_owned_project(db, creator_id, project_id)
+    tanglish = await get_latest_tanglish(db, project_id)
+    if tanglish is None:
+        raise NotFoundError("No Tanglish script has been generated for this project yet.")
+    tanglish.status = ContentStatus.draft
+    await db.commit()
+    await db.refresh(tanglish)
+    return tanglish
+
+
 async def approve_tanglish(db: AsyncSession, creator_id: str, project_id: uuid.UUID) -> TanglishScript:
     project = await project_service.get_owned_project(db, creator_id, project_id)
     tanglish = await get_latest_tanglish(db, project.id)

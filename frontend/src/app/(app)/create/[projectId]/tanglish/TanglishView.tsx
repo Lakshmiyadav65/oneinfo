@@ -4,7 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
-import { getTanglish, generateTanglish, updateTanglish, approveTanglish } from "@/lib/api/tanglish";
+import {
+  getTanglish,
+  generateTanglish,
+  updateTanglish,
+  approveTanglish,
+  reopenTanglish,
+} from "@/lib/api/tanglish";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -195,10 +201,11 @@ function LocalizedEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
+  const [isReopening, setIsReopening] = useState(false);
 
   const isApproved = tanglish.status === "approved";
   const isDirty = content !== tanglish.content;
-  const isBusy = isSaving || isRegenerating || isApproving;
+  const isBusy = isSaving || isRegenerating || isApproving || isReopening;
 
   async function handleSave() {
     setIsSaving(true);
@@ -229,6 +236,22 @@ function LocalizedEditor({
       });
     } finally {
       setIsRegenerating(false);
+    }
+  }
+
+  async function handleReopen() {
+    setIsReopening(true);
+    try {
+      await reopenTanglish(projectId);
+      onChanged();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't reopen the script",
+        description: errorDescription(err),
+      });
+    } finally {
+      setIsReopening(false);
     }
   }
 
@@ -273,12 +296,33 @@ function LocalizedEditor({
             </div>
           )}
 
+          {isApproved && (
+            <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+              Approved, so the fields are locked. <strong className="font-medium text-foreground">Edit as draft</strong>{" "}
+              unlocks them without regenerating. Anything already built from
+              this version — the storyboard, and a rendered video — is left
+              alone and will not pick the change up on its own.
+            </p>
+          )}
+
           <div className="flex flex-wrap justify-end gap-2">
+            {/* Same reasoning as the script step: reopening is the cheap,
+                non-destructive way back into an approved version. */}
+            {isApproved && (
+              <Button
+                variant="secondary"
+                onClick={handleReopen}
+                isLoading={isReopening}
+                disabled={isRegenerating}
+              >
+                Edit as draft
+              </Button>
+            )}
             <Button
               variant="secondary"
               onClick={handleRegenerate}
               isLoading={isRegenerating}
-              disabled={isApproving || isSaving}
+              disabled={isApproving || isSaving || isReopening}
             >
               {language === tanglish.language
                 ? "Regenerate"

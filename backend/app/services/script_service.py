@@ -114,6 +114,30 @@ async def update_script(
     return script
 
 
+async def reopen_script(db: AsyncSession, creator_id: str, project_id: uuid.UUID) -> Script:
+    """
+    Puts an approved script back into draft so it can be edited again.
+
+    Approving used to be one-way: the editor locked, and the only offered
+    route to a wording change was Regenerate - which throws the script away
+    and writes a new one from the model. That is a bad trade for fixing a
+    line, and it is what someone coming back to a finished project runs into
+    first.
+
+    Nothing downstream is touched. A storyboard or a rendered video built
+    from the old wording stays exactly where it is; the caller is told it is
+    now out of step rather than having it deleted out from under them.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    script = await get_latest_script(db, project_id)
+    if script is None:
+        raise NotFoundError("No script has been generated for this project yet.")
+    script.status = ContentStatus.draft
+    await db.commit()
+    await db.refresh(script)
+    return script
+
+
 async def approve_script(db: AsyncSession, creator_id: str, project_id: uuid.UUID) -> Script:
     project = await project_service.get_owned_project(db, creator_id, project_id)
     script = await get_latest_script(db, project.id)

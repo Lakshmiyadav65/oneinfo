@@ -10,6 +10,7 @@ import {
   regenerateScript,
   updateScript,
   approveScript,
+  reopenScript,
 } from "@/lib/api/script";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -140,6 +141,7 @@ function ScriptEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
+  const [isReopening, setIsReopening] = useState(false);
 
   const isApproved = script.status === "approved";
   const isDirty = title !== script.title || content !== script.content;
@@ -173,6 +175,22 @@ function ScriptEditor({
       });
     } finally {
       setIsRegenerating(false);
+    }
+  }
+
+  async function handleReopen() {
+    setIsReopening(true);
+    try {
+      await reopenScript(projectId);
+      onChanged();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't reopen the script",
+        description: errorDescription(err),
+      });
+    } finally {
+      setIsReopening(false);
     }
   }
 
@@ -215,12 +233,37 @@ function ScriptEditor({
               onChange={(e) => setContent(e.target.value)}
             />
           </div>
+          {isApproved && (
+            <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+              Approved, so the fields are locked. <strong className="font-medium text-foreground">Edit as draft</strong>{" "}
+              unlocks them without regenerating. Anything already built from
+              this version — the storyboard, and a rendered video — is left
+              alone and will not pick the change up on its own.
+            </p>
+          )}
+
           <div className="flex flex-wrap justify-end gap-2">
+            {/*
+              Offered before Regenerate, and deliberately: approving used to
+              be one-way, so coming back to a finished project left the
+              editor greyed out with regenerating - which discards the script
+              and writes a new one - as the only way to change a word.
+            */}
+            {isApproved && (
+              <Button
+                variant="secondary"
+                onClick={handleReopen}
+                isLoading={isReopening}
+                disabled={isRegenerating}
+              >
+                Edit as draft
+              </Button>
+            )}
             <Button
               variant="secondary"
               onClick={handleRegenerate}
               isLoading={isRegenerating}
-              disabled={isApproving || isSaving}
+              disabled={isApproving || isSaving || isReopening}
             >
               Regenerate
             </Button>

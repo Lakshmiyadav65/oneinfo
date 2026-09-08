@@ -53,6 +53,16 @@ async def update_script(
     return await script_service.update_script(db, creator.id, project_id, payload.content, payload.title)
 
 
+@router.post("/reopen", response_model=ScriptOut)
+async def reopen_script(
+    project_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> Script:
+    """Unlocks an approved script for editing, without regenerating it."""
+    return await script_service.reopen_script(db, creator.id, project_id)
+
+
 @router.post("/approve", response_model=ScriptOut)
 async def approve_script(
     project_id: uuid.UUID,

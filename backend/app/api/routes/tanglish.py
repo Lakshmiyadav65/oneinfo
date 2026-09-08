@@ -48,6 +48,16 @@ async def update_tanglish(
     return await tanglish_service.update_tanglish(db, creator.id, project_id, payload.content)
 
 
+@router.post("/reopen", response_model=TanglishOut)
+async def reopen_tanglish(
+    project_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> TanglishScript:
+    """Unlocks an approved localization for editing, without regenerating it."""
+    return await tanglish_service.reopen_tanglish(db, creator.id, project_id)
+
+
 @router.post("/approve", response_model=TanglishOut)
 async def approve_tanglish(
     project_id: uuid.UUID,

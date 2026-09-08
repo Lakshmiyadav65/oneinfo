@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
@@ -10,6 +11,7 @@ export function WorkflowStepper({
   steps,
   activeIndex,
   completedCount,
+  hrefFor,
 }: {
   steps: readonly WorkflowStep[];
   activeIndex: number;
@@ -19,6 +21,12 @@ export function WorkflowStepper({
    * it — the bar reports progress, the highlight reports position.
    */
   completedCount: number;
+  /**
+   * Where a step leads, or null for one that cannot be opened. Steps were
+   * previously plain text, so a creator looking at a finished project had no
+   * way back to a section from here — clicking a label only selected it.
+   */
+  hrefFor?: (step: WorkflowStep, index: number) => string | null;
 }) {
   const done = Math.min(Math.max(completedCount, 0), steps.length);
   // The nodes sit at even fractions of the track, so the fill has to end on
@@ -62,9 +70,10 @@ export function WorkflowStepper({
           {steps.map((step, index) => {
             const isActive = index === activeIndex;
             const isComplete = index < done;
+            const href = hrefFor?.(step, index) ?? null;
 
-            return (
-              <li key={step.key} className="flex flex-col items-center gap-1.5">
+            const body = (
+              <>
                 <span
                   className={cn(
                     "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors",
@@ -77,7 +86,8 @@ export function WorkflowStepper({
                     // active fill wins and the check still shows through.
                     isActive && "bg-primary text-primary-foreground",
                     !isActive && isComplete && "bg-primary/20 text-primary",
-                    !isActive && !isComplete && "bg-muted text-muted-foreground"
+                    !isActive && !isComplete && "bg-muted text-muted-foreground",
+                    href && !isActive && "group-hover:bg-primary/40"
                   )}
                   aria-hidden="true"
                 >
@@ -90,12 +100,32 @@ export function WorkflowStepper({
                     "hidden text-center text-xs sm:block",
                     isActive
                       ? "!block font-semibold text-foreground"
-                      : "text-muted-foreground"
+                      : "text-muted-foreground",
+                    href && !isActive && "group-hover:text-foreground"
                   )}
                   aria-current={isActive ? "step" : undefined}
                 >
                   {step.label}
                 </span>
+              </>
+            );
+
+            return (
+              <li key={step.key}>
+                {href ? (
+                  // The label is hidden on narrow screens, which takes it out
+                  // of the accessibility tree with it — so the link carries
+                  // its own name rather than relying on the text being shown.
+                  <Link
+                    href={href}
+                    aria-label={step.label}
+                    className="group flex flex-col items-center gap-1.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  >
+                    {body}
+                  </Link>
+                ) : (
+                  <div className="flex flex-col items-center gap-1.5">{body}</div>
+                )}
               </li>
             );
           })}

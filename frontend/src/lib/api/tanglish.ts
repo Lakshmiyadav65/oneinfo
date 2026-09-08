@@ -25,3 +25,8 @@ export async function updateTanglish(projectId: string, content: string): Promis
 export async function approveTanglish(projectId: string): Promise<Tanglish> {
   return api.post<Tanglish>(`/projects/${projectId}/tanglish/approve`);
 }
+
+/** Unlocks an approved localization for editing, without regenerating it. */
+export async function reopenTanglish(projectId: string): Promise<Tanglish> {
+  return api.post<Tanglish>(`/projects/${projectId}/tanglish/reopen`);
+}

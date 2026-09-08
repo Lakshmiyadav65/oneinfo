@@ -45,3 +45,21 @@ export function completedStepCount(status: ProjectStatus): number {
   if (status === "completed") return CREATE_STEPS.length;
   return stepIndex(STATUS_TO_STEP[status]);
 }
+
+/**
+ * Where a step lives for an existing project, or null when it has nowhere to
+ * go: "idea" is the /create page that brings a project into being, so it has
+ * no per-project route, and a step the project has not reached yet would only
+ * offer to generate something the previous step has not produced.
+ */
+export function stepHref(
+  projectId: string,
+  key: CreateStepKey,
+  status: ProjectStatus
+): string | null {
+  if (key === "idea") return null;
+  // The furthest finished step plus the one in progress: you can revisit
+  // anything you have done, and re-enter the step you are on.
+  if (stepIndex(key) > completedStepCount(status)) return null;
+  return `/create/${projectId}/${key}`;
+}

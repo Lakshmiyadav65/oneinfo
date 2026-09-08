@@ -29,3 +29,8 @@ export async function updateScript(
 export async function approveScript(projectId: string): Promise<Script> {
   return api.post<Script>(`/projects/${projectId}/script/approve`);
 }
+
+/** Unlocks an approved script for editing, without regenerating it. */
+export async function reopenScript(projectId: string): Promise<Script> {
+  return api.post<Script>(`/projects/${projectId}/script/reopen`);
+}

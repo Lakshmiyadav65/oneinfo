@@ -6,6 +6,7 @@ import { Badge, type BadgeProps } from "@/components/ui/Badge";
 import {
   CREATE_STEPS,
   completedStepCount,
+  stepHref,
   stepIndex,
   type CreateStepKey,
 } from "@/lib/workflow/steps";
@@ -56,6 +57,9 @@ export function WorkflowHeader({
         steps={CREATE_STEPS}
         activeIndex={stepIndex(activeStep)}
         completedCount={completedStepCount(project.status)}
+        hrefFor={(step) =>
+          stepHref(project.id, step.key as CreateStepKey, project.status)
+        }
       />
     </div>
   );
