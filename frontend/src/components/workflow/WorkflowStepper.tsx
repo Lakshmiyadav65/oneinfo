@@ -9,14 +9,23 @@ export type WorkflowStep = {
 export function WorkflowStepper({
   steps,
   activeIndex,
+  completedCount,
 }: {
   steps: readonly WorkflowStep[];
   activeIndex: number;
+  /**
+   * Steps the project has genuinely finished. Kept separate from
+   * `activeIndex` because navigating to a step is not the same as clearing
+   * it — the bar reports progress, the highlight reports position.
+   */
+  completedCount: number;
 }) {
+  const done = Math.min(Math.max(completedCount, 0), steps.length);
+  // The nodes sit at even fractions of the track, so the fill has to end on
+  // the last finished node rather than at `done / steps.length` — otherwise a
+  // fully finished project paints the bar past the final circle.
   const lastIndex = Math.max(steps.length - 1, 1);
-  // The fill stops at the current node rather than running past it — the bar
-  // shows how far you have come, not how far the step is from finishing.
-  const percentComplete = (Math.min(activeIndex, lastIndex) / lastIndex) * 100;
+  const percentComplete = done === 0 ? 0 : ((done - 1) / lastIndex) * 100;
   const current = steps[activeIndex];
 
   return (
@@ -29,7 +38,7 @@ export function WorkflowStepper({
           </span>
         </p>
         <p className="text-xs tabular-nums text-muted-foreground">
-          {Math.round(percentComplete)}%
+          {done} of {steps.length} done
         </p>
       </div>
 
@@ -52,7 +61,7 @@ export function WorkflowStepper({
         <ol className="relative flex items-start justify-between">
           {steps.map((step, index) => {
             const isActive = index === activeIndex;
-            const isComplete = index < activeIndex;
+            const isComplete = index < done;
 
             return (
               <li key={step.key} className="flex flex-col items-center gap-1.5">
@@ -63,8 +72,11 @@ export function WorkflowStepper({
                     // the track behind each node, so the line reads as
                     // connecting the steps rather than running through them.
                     "ring-4 ring-background",
+                    // A step can be both finished and the one you are on
+                    // (the generate step of a completed project), so the
+                    // active fill wins and the check still shows through.
                     isActive && "bg-primary text-primary-foreground",
-                    isComplete && "bg-primary/20 text-primary",
+                    !isActive && isComplete && "bg-primary/20 text-primary",
                     !isActive && !isComplete && "bg-muted text-muted-foreground"
                   )}
                   aria-hidden="true"

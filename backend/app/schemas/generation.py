@@ -10,9 +10,15 @@ class GenerationJobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    # Null for a full render, set for a single-scene preview. The UI needs
+    # the difference: the two produce very different deliverables.
+    scene_id: uuid.UUID | None
     status: JobStatus
     current_stage: str | None
+    scenes_total: int | None
+    scenes_completed: int | None
     error_message: str | None
+    error_detail: str | None
     created_at: datetime
     updated_at: datetime
 

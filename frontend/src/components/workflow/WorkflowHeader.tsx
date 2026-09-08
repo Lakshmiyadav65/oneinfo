@@ -3,7 +3,12 @@ import { ArrowLeft } from "lucide-react";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { LanguageSwitcher } from "@/components/workflow/LanguageSwitcher";
 import { Badge, type BadgeProps } from "@/components/ui/Badge";
-import { CREATE_STEPS, stepIndex, type CreateStepKey } from "@/lib/workflow/steps";
+import {
+  CREATE_STEPS,
+  completedStepCount,
+  stepIndex,
+  type CreateStepKey,
+} from "@/lib/workflow/steps";
 import type { Project } from "@/types/project";
 
 const STATUS_VARIANT: Record<Project["status"], NonNullable<BadgeProps["variant"]>> = {
@@ -47,7 +52,11 @@ export function WorkflowHeader({
           <Badge variant={STATUS_VARIANT[project.status]}>{project.status}</Badge>
         </div>
       </div>
-      <WorkflowStepper steps={CREATE_STEPS} activeIndex={stepIndex(activeStep)} />
+      <WorkflowStepper
+        steps={CREATE_STEPS}
+        activeIndex={stepIndex(activeStep)}
+        completedCount={completedStepCount(project.status)}
+      />
     </div>
   );
 }

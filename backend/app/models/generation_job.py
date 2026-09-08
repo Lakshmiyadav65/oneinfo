@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,7 +36,14 @@ class GenerationJob(Base):
     )
     status: Mapped[JobStatus] = mapped_column(String, nullable=False, default=JobStatus.queued, index=True)
     current_stage: Mapped[str | None] = mapped_column(String, nullable=True)
+    # current_stage in numbers, so the UI can draw progress instead of an
+    # unbounded spinner. Both stay null until the run knows its scene count.
+    scenes_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scenes_completed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # What the creator is shown: one sentence, in their terms, never blank.
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The raw provider/ffmpeg text behind that sentence, kept for diagnosis.
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

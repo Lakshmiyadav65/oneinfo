@@ -16,7 +16,7 @@ from app.models.generation_job import GenerationJob, JobStatus
 from app.models.project import Project, ProjectStatus
 from app.models.storyboard import Storyboard
 from app.models.video_output import VideoOutput
-from app.providers.ffmpeg_runner import probe_duration_seconds
+from app.providers.ffmpeg_runner import FFmpegError, probe_duration_seconds
 from app.providers.storage import get_storage_provider
 from app.providers.video import get_supported_durations, get_video_provider
 from app.providers.video.base import (
@@ -31,6 +31,42 @@ from app.services.rendering_service import render_final_video
 class GenerationError(AppError):
     code = "GENERATION_FAILED"
     status_code = 500
+
+
+def _describe_failure(exc: Exception, stage: str | None) -> tuple[str, str]:
+    """
+    Splits a failure into the sentence the creator reads and the raw text
+    kept for diagnosis.
+
+    Worth separating because the raw text is not something to put in front
+    of someone: Veo refuses a clip with a dict, ffmpeg with four lines of
+    filter graph, and some exceptions stringify to nothing at all - which
+    reached the creator as an error box with no words in it, which is how
+    this was found.
+    """
+    raw = str(exc).strip()
+    detail = f"{type(exc).__name__}: {raw}" if raw else type(exc).__name__
+
+    if isinstance(exc, FFmpegError):
+        return (
+            "Every scene generated, but stitching them into the final video "
+            "failed. Note that starting again re-generates all of the scenes "
+            "and bills for them again - the saved clips are not reused - so "
+            "this is worth reporting rather than retrying blind.",
+            detail,
+        )
+    if isinstance(exc, GenerationError) and raw:
+        # Already written for a person - either our own message, or the
+        # provider explaining why it refused the clip.
+        return raw, detail
+    # Anything else is a bug or an outage, and naming the stage is the only
+    # useful thing we can say about it.
+    where = f" while {stage[0].lower()}{stage[1:]}" if stage else ""
+    return (
+        f"Video generation stopped unexpectedly{where}. Try starting it again - "
+        "if it keeps failing, the technical details below are what to report.",
+        detail,
+    )
 
 
 async def _get_latest_job(db: AsyncSession, project_id: uuid.UUID) -> GenerationJob | None:
@@ -222,6 +258,13 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 if not scenes:
                     raise GenerationError("That scene is no longer in the storyboard.")
 
+            # Set before the first (billable) request goes out, so the UI can
+            # show real progress from the moment the run starts rather than an
+            # unbounded spinner.
+            job.scenes_total = len(scenes)
+            job.scenes_completed = 0
+            await db.commit()
+
             video_provider = get_video_provider(settings)
             storage = get_storage_provider(settings)
 
@@ -275,6 +318,8 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     )
                 )
                 render_inputs.append((local_path, scene.caption))
+                job.scenes_completed = index
+                await db.commit()
 
             if single_scene:
                 # Nothing to stitch, and no finished video to publish - the
@@ -324,10 +369,9 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             project = await db.get(Project, job.project_id) if job else None
             if job is not None:
                 job.status = JobStatus.failed
-                # Some exceptions stringify to nothing at all, which leaves the
-                # creator staring at a failed job with no reason given. Fall
-                # back to the type name so there is always something to act on.
-                job.error_message = (str(exc) or type(exc).__name__)[:500]
+                message, detail = _describe_failure(exc, job.current_stage)
+                job.error_message = message[:500]
+                job.error_detail = detail[:2000]
             # A failed one-scene preview says nothing about the project as a
             # whole - the storyboard is still fine and the creator can just
             # try a different scene. Only a real generation run fails it.

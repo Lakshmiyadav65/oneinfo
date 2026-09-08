@@ -118,7 +118,14 @@ class VeoVideoProvider:
         if not data.get("done"):
             return VideoJobStatus(status="processing")
         if "error" in data:
-            return VideoJobStatus(status="failed", error_message=str(data["error"])[:500])
+            # The operation carries {code, message, details}. Stringifying the
+            # whole dict put "{'code': 3, 'message': ...}" in front of the
+            # creator; the message on its own is at least a sentence.
+            error = data["error"]
+            message = error.get("message") if isinstance(error, dict) else None
+            return VideoJobStatus(
+                status="failed", error_message=str(message or error)[:500]
+            )
 
         # A safety-filtered generation still finishes "successfully": the
         # operation is done, carries no error, and simply has no videos in it.

@@ -31,3 +31,17 @@ const STATUS_TO_STEP: Record<ProjectStatus, CreateStepKey> = {
 export function nextStepForStatus(status: ProjectStatus): CreateStepKey {
   return STATUS_TO_STEP[status];
 }
+
+/**
+ * How many steps the project has actually finished — which is not the same
+ * as which step you are looking at. Opening /generate on a project that has
+ * only reached the storyboard used to light the whole bar up to 100%, so the
+ * stepper agreed the video was done while the page below it offered to start
+ * generating one.
+ */
+export function completedStepCount(status: ProjectStatus): number {
+  // Only a finished render completes the last step. "generating" and
+  // "failed" both sit on it without having cleared it.
+  if (status === "completed") return CREATE_STEPS.length;
+  return stepIndex(STATUS_TO_STEP[status]);
+}

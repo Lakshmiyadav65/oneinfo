@@ -73,7 +73,8 @@ export default function CreateVideoPage() {
         </p>
       </div>
 
-      <WorkflowStepper steps={CREATE_STEPS} activeIndex={stepIndex("idea")} />
+      {/* Nothing is finished yet — the project does not exist until submit. */}
+      <WorkflowStepper steps={CREATE_STEPS} activeIndex={stepIndex("idea")} completedCount={0} />
 
       {/*
         Above the idea form on purpose. The on-camera choice happens three

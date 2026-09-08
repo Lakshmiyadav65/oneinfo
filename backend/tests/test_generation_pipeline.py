@@ -84,3 +84,25 @@ async def test_generation_requires_a_storyboard(client):
 
     resp = await client.post(f"/projects/{project_id}/generate", headers=headers)
     assert resp.status_code == 422
+
+
+async def test_finished_job_reports_scene_progress(client, requires_ffmpeg):
+    """
+    The counters the Generate page draws its progress bar from. Without them
+    the page could only show an unbounded spinner captioned with whatever
+    prose the worker last wrote.
+    """
+    headers = auth_headers("creator-a")
+    result = await run_full_pipeline(client, "creator-a", "A short video about kites")
+    project_id = result["project_id"]
+
+    resp = await client.post(f"/projects/{project_id}/generate", headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    finished = await _wait_for_job(client, project_id, headers)
+    assert finished["status"] == "completed", finished
+    assert finished["scenes_total"] > 0
+    # Every scene the run set out to render was rendered.
+    assert finished["scenes_completed"] == finished["scenes_total"]
+    assert finished["scene_id"] is None
+    assert finished["error_message"] is None
