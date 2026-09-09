@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Label } from "@/components/ui/Label";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Spinner } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
@@ -31,6 +32,39 @@ function errorDescription(err: unknown): string | undefined {
 export function ScriptView({ projectId }: { projectId: string }) {
   const project = useAsyncData(() => getProject(projectId), [projectId]);
   const scriptQuery = useAsyncData(() => getScript(projectId), [projectId]);
+  const [autoFailed, setAutoFailed] = useState<string | null>(null);
+  // Guards the one call. Not state: it must be set synchronously, before a
+  // re-render can schedule the effect a second time, and it must survive
+  // StrictMode running the effect twice on the same mount.
+  const startedFor = useRef<string | null>(null);
+
+  // Arriving with a hook chosen and no script yet is unambiguous - the whole
+  // reason for being on this page is to get a script - so write it rather
+  // than asking for one more click. Only when none exists: coming back to
+  // this step later must never quietly rewrite the script already there.
+  const needsScript = scriptQuery.status === "success" && !scriptQuery.data;
+
+  useEffect(() => {
+    if (!needsScript || startedFor.current === projectId) return;
+    startedFor.current = projectId;
+    setAutoFailed(null);
+    generateScript(projectId)
+      .then(() => scriptQuery.retry())
+      .catch((err: unknown) => {
+        // Deliberately not retried on its own. Every attempt is a paid model
+        // call, and a page that quietly loops on failure is how a bad prompt
+        // turns into a bill.
+        setAutoFailed(errorDescription(err) ?? "The script couldn't be written.");
+      });
+    // scriptQuery.retry is a new function each render and would re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsScript, projectId]);
+
+  function retryGeneration() {
+    startedFor.current = null;
+    setAutoFailed(null);
+    scriptQuery.retry();
+  }
 
   if (project.status === "loading") {
     return (
@@ -66,8 +100,14 @@ export function ScriptView({ projectId }: { projectId: string }) {
         <ErrorState description={scriptQuery.message} onRetry={scriptQuery.retry} />
       )}
 
-      {scriptQuery.status === "success" && !scriptQuery.data && (
-        <GenerateScriptCard projectId={projectId} onGenerated={scriptQuery.retry} />
+      {needsScript && !autoFailed && <WritingScriptCard />}
+
+      {needsScript && autoFailed && (
+        <ErrorState
+          title="Couldn't write the script"
+          description={autoFailed}
+          onRetry={retryGeneration}
+        />
       )}
 
       {scriptQuery.status === "success" && scriptQuery.data && (
@@ -82,44 +122,18 @@ export function ScriptView({ projectId }: { projectId: string }) {
   );
 }
 
-function GenerateScriptCard({
-  projectId,
-  onGenerated,
-}: {
-  projectId: string;
-  onGenerated: () => void;
-}) {
-  const { toast } = useToast();
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  async function handleGenerate() {
-    setIsGenerating(true);
-    try {
-      await generateScript(projectId);
-      onGenerated();
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: "Couldn't generate script",
-        description: errorDescription(err),
-      });
-    } finally {
-      setIsGenerating(false);
-    }
-  }
-
+function WritingScriptCard() {
   return (
     <Card>
-      <CardContent className="flex flex-col items-start gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+      <CardContent className="flex items-center gap-3 p-6">
+        <Spinner />
         <div>
-          <h3 className="text-base font-semibold text-foreground">Script</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Generate a script from your selected hook.
+          <p className="text-sm font-medium text-foreground">Writing your script</p>
+          <p className="text-sm text-muted-foreground">
+            From the hook you picked and your knowledge base. This takes a few
+            seconds.
           </p>
         </div>
-        <Button onClick={handleGenerate} isLoading={isGenerating}>
-          Generate Script
-        </Button>
       </CardContent>
     </Card>
   );
