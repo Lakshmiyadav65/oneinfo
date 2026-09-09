@@ -81,13 +81,14 @@ export function WorkflowStepper({
                     // the track behind each node, so the line reads as
                     // connecting the steps rather than running through them.
                     "ring-4 ring-background",
-                    // A step can be both finished and the one you are on
-                    // (the generate step of a completed project), so the
-                    // active fill wins and the check still shows through.
-                    isActive && "bg-primary text-primary-foreground",
-                    !isActive && isComplete && "bg-primary/20 text-primary",
-                    !isActive && !isComplete && "bg-muted text-muted-foreground",
-                    href && !isActive && "group-hover:bg-primary/40"
+                    // Finished and current share the solid fill. A tick in
+                    // the primary colour on a 20% wash of that same colour
+                    // came out around 3.7:1 against the dark theme, so a
+                    // completed step read as an empty circle and only the
+                    // step you were standing on looked done.
+                    (isComplete || isActive) && "bg-primary text-primary-foreground",
+                    !isComplete && !isActive && "bg-muted text-muted-foreground",
+                    href && "group-hover:bg-primary-hover"
                   )}
                   aria-hidden="true"
                 >
