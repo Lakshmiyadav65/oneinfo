@@ -29,7 +29,9 @@ export async function createProject(
 }
 
 /** Ideas for a creator with an empty Idea box. Creates no project. */
-export function suggestIdeas(language: ProjectLanguage): Promise<IdeaSuggestions> {
+export function suggestIdeas(language?: ProjectLanguage): Promise<IdeaSuggestions> {
+  // Omitted rather than defaulted here: the server already has a value, and
+  // picking one in the client would put a second default in play.
   return api.post<IdeaSuggestions>("/projects/idea-suggestions", { language });
 }
 

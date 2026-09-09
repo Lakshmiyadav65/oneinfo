@@ -4,9 +4,10 @@ export const CREATE_STEPS = [
   { key: "idea", label: "Idea" },
   { key: "hooks", label: "Hooks" },
   { key: "script", label: "Script" },
-  // Route key stays "tanglish" (the API path predates multi-language
-  // support); the label reflects what the step actually offers now.
-  { key: "tanglish", label: "Language" },
+  // No Language step. It existed to adapt an English script into Telugu or
+  // Tenglish, back when the script agent always wrote English; the agent now
+  // writes in the project's language directly, so the step had nothing left
+  // to do. Language is picked in the header, on any step.
   { key: "storyboard", label: "Storyboard" },
   { key: "generate", label: "Generate" },
 ] as const;
@@ -21,7 +22,9 @@ const STATUS_TO_STEP: Record<ProjectStatus, CreateStepKey> = {
   draft: "hooks",
   hooks: "hooks",
   script: "script",
-  tanglish: "tanglish",
+  // A project parked on the old Language step has finished its script; the
+  // storyboard is what it owes next.
+  tanglish: "storyboard",
   storyboard: "storyboard",
   generating: "generate",
   completed: "generate",

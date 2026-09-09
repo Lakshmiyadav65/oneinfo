@@ -403,14 +403,8 @@ function ScriptEditor({
 
       {isApproved && (
         <div className="flex justify-end gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => router.push(`/create/${projectId}/storyboard`)}
-          >
-            Skip to Storyboard
-          </Button>
-          <Button onClick={() => router.push(`/create/${projectId}/tanglish`)}>
-            Change language (optional)
+          <Button onClick={() => router.push(`/create/${projectId}/storyboard`)}>
+            Continue to Storyboard
           </Button>
         </div>
       )}

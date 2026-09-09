@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Lightbulb } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Label } from "@/components/ui/Label";
@@ -13,19 +13,13 @@ import { useToast } from "@/components/ui/Toast";
 import { createProject, suggestIdeas } from "@/lib/api/projects";
 import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
 import { CREATE_STEPS, stepIndex } from "@/lib/workflow/steps";
-import {
-  PROJECT_LANGUAGES,
-  type IdeaSuggestions,
-  type ProjectLanguage,
-} from "@/types/project";
-import { cn } from "@/lib/utils/cn";
+import { type IdeaSuggestions } from "@/types/project";
 
 export default function CreateVideoPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
-  const [language, setLanguage] = useState<ProjectLanguage>("english");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [suggestions, setSuggestions] = useState<IdeaSuggestions | null>(null);
   const [isSuggesting, setIsSuggesting] = useState(false);
@@ -33,7 +27,7 @@ export default function CreateVideoPage() {
   async function handleSuggest() {
     setIsSuggesting(true);
     try {
-      setSuggestions(await suggestIdeas(language));
+      setSuggestions(await suggestIdeas());
     } catch (err) {
       toast({
         variant: "destructive",
@@ -48,7 +42,9 @@ export default function CreateVideoPage() {
   async function handleSubmit() {
     setIsSubmitting(true);
     try {
-      const project = await createProject(idea, title || undefined, language);
+      // No language argument: the project takes the server's, and the
+      // creator sets it from the header switcher on any step.
+      const project = await createProject(idea, title || undefined);
       // Navigate straight away and let the hooks step generate on arrival.
       // Generating here first would hold this button for ~25s with nothing
       // moving; on the next screen the same wait shows the step advance and
@@ -86,44 +82,10 @@ export default function CreateVideoPage() {
       <Card>
         <CardContent className="space-y-6 p-6 sm:p-8">
           {/*
-            First, above the idea. Language is chosen here rather than at the
-            later Language step because hooks are the first thing generated,
-            and a creator whose audience is Telugu cannot judge an English
-            hook without translating it — asking after the hooks exist is
-            asking too late. It leads the form for the same reason: it frames
-            the language the idea itself gets written in.
+            No language picker here. It is chosen from the header instead,
+            reachable on every step, so starting a project is one question
+            rather than two.
           */}
-          <div className="space-y-2.5">
-            <Label>Language</Label>
-            <div className="flex flex-wrap gap-3">
-              {PROJECT_LANGUAGES.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setLanguage(option.value)}
-                  aria-pressed={language === option.value}
-                  className={cn(
-                    "relative rounded-md border px-4 py-3 pr-10 text-left text-sm transition-colors",
-                    // A 5% tint reads as "unselected" on a dark background —
-                    // the selected state has to carry a ring and a mark, not
-                    // just a wash the eye can miss.
-                    language === option.value
-                      ? "border-primary bg-primary/15 text-foreground ring-2 ring-primary"
-                      : "border-border text-muted-foreground hover:border-ring hover:bg-muted/50"
-                  )}
-                >
-                  <span className="block font-medium">{option.label}</span>
-                  <span className="block text-xs text-muted-foreground">{option.hint}</span>
-                  {language === option.value && (
-                    <span className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full bg-primary">
-                      <Check className="size-3.5 text-primary-foreground" aria-hidden="true" />
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="space-y-2">
             <Label htmlFor="project-title">Project title (optional)</Label>
             <Input
