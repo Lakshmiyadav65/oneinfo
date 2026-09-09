@@ -11,6 +11,8 @@ import {
   updateScript,
   approveScript,
   reopenScript,
+  getScriptVersions,
+  restoreScriptVersion,
 } from "@/lib/api/script";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -24,6 +26,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { parseScriptBeats, renderScriptBeats } from "@/lib/workflow/script-beats";
+import { cn } from "@/lib/utils/cn";
 import type { Script } from "@/types/script";
 
 function errorDescription(err: unknown): string | undefined {
@@ -215,6 +218,19 @@ function ScriptEditor({
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isReopening, setIsReopening] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  // Which version is on screen. Null means the current one, so a new version
+  // arriving does not leave the view pinned to what it replaced.
+  const [viewing, setViewing] = useState<number | null>(null);
+
+  // Keyed on script.id so a regenerate pulls the new version into the list.
+  const versionsQuery = useAsyncData(
+    () => getScriptVersions(projectId),
+    [projectId, script.id]
+  );
+  const allVersions = versionsQuery.status === "success" ? versionsQuery.data : [];
+  const older =
+    viewing === null ? null : allVersions.find((v) => v.version === viewing) ?? null;
 
   const isApproved = script.status === "approved";
   // Derived rather than held: beats are what the creator types into, and
@@ -244,6 +260,25 @@ function ScriptEditor({
       });
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (!older) return;
+    setIsRestoring(true);
+    try {
+      await restoreScriptVersion(projectId, older.version);
+      // Back to the current version, which is now a copy of the one restored.
+      setViewing(null);
+      onChanged();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't restore that version",
+        description: errorDescription(err),
+      });
+    } finally {
+      setIsRestoring(false);
     }
   }
 
@@ -295,8 +330,84 @@ function ScriptEditor({
     }
   }
 
+  const olderBeats = older ? parseScriptBeats(older.content) : null;
+
   return (
     <div className="space-y-4">
+      {/*
+        Only worth showing once there is a choice to make. Regenerating keeps
+        the take it replaced, so the version you preferred is still reachable
+        instead of being written over.
+      */}
+      {allVersions.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Versions</span>
+          {allVersions.map((v) => {
+            const isShown = v.version === (older?.version ?? script.version);
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setViewing(v.version === script.version ? null : v.version)}
+                aria-pressed={isShown}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  isShown
+                    ? "border-primary bg-primary/15 text-foreground"
+                    : "border-border text-muted-foreground hover:border-ring hover:bg-muted/50"
+                )}
+              >
+                v{v.version}
+                {v.version === script.version && " · current"}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {older && (
+        <Card>
+          <CardContent className="space-y-4 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{older.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  Version {older.version}, kept for comparison. Read-only — bring
+                  it back to edit it.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleRestore}
+                isLoading={isRestoring}
+              >
+                Use this version
+              </Button>
+            </div>
+            {olderBeats ? (
+              <div className="space-y-3 rounded-md border border-border p-3">
+                {olderBeats.map((beat, index) => (
+                  <div key={index} className="space-y-1">
+                    <span className="inline-flex rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                      {beat.label}
+                    </span>
+                    <p className="rounded-md border border-input bg-card px-3 py-2 text-sm text-muted-foreground">
+                      {beat.line}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="whitespace-pre-wrap rounded-md border border-input bg-card px-3 py-2 text-sm text-muted-foreground">
+                {older.content}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {!older && (
       <Card>
         <CardContent className="space-y-4 p-6">
           <div className="space-y-1.5">
@@ -400,8 +511,9 @@ function ScriptEditor({
           </div>
         </CardContent>
       </Card>
+      )}
 
-      {isApproved && (
+      {isApproved && !older && (
         <div className="flex justify-end gap-2">
           <Button onClick={() => router.push(`/create/${projectId}/storyboard`)}>
             Continue to Storyboard

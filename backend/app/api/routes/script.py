@@ -31,7 +31,28 @@ async def regenerate_script(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> Script:
-    return await script_service.generate_script(db, settings, creator.id, project_id)
+    return await script_service.regenerate_script(db, settings, creator.id, project_id)
+
+
+@router.get("/versions", response_model=list[ScriptOut])
+async def list_script_versions(
+    project_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> list[Script]:
+    """Every take written for this project, newest first."""
+    return await script_service.list_script_versions(db, creator.id, project_id)
+
+
+@router.post("/versions/{version}/restore", response_model=ScriptOut)
+async def restore_script_version(
+    project_id: uuid.UUID,
+    version: int,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> Script:
+    """Copies an earlier version forward so it becomes the current one."""
+    return await script_service.restore_script_version(db, creator.id, project_id, version)
 
 
 @router.get("", response_model=ScriptOut)

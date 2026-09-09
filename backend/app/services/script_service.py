@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.script_agent import render_script, run_script_agent
+from app.agents.script_agent import carry_hook_over, render_script, run_script_agent
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationAppError
 from app.models.hook import Hook
@@ -31,10 +31,20 @@ async def get_latest_script(db: AsyncSession, project_id: uuid.UUID) -> Script |
     return result.scalar_one_or_none()
 
 
-async def generate_script(
-    db: AsyncSession, settings: Settings, creator_id: str, project_id: uuid.UUID
+async def _write_script(
+    db: AsyncSession,
+    settings: Settings,
+    creator_id: str,
+    project_id: uuid.UUID,
+    *,
+    previous: Script | None,
 ) -> Script:
-    """Also serves /script/regenerate — same agent call, same version rule."""
+    """
+    One agent call, written down as a new version.
+
+    `previous` is the version being rewritten, if any: its hook is carried
+    into the new take, and its number decides the next one.
+    """
     project = await project_service.get_owned_project(db, creator_id, project_id)
     hook = await _get_selected_hook(db, project)
 
@@ -52,45 +62,104 @@ async def generate_script(
         # language when the selected hook happened to drag it there.
         language=project.language,
     )
-    content = render_script(output.beats)
+    beats = output.beats
+    if previous is not None:
+        beats = carry_hook_over(beats, previous.content)
 
-    existing = await get_latest_script(db, project.id)
-    if existing is None:
-        script = Script(
-            project_id=project.id,
-            creator_id=creator_id,
-            version=1,
-            title=output.title,
-            language=output.language,
-            content=content,
-            estimated_duration_seconds=output.estimated_duration_seconds,
-            status=ContentStatus.draft,
-        )
-        db.add(script)
-    elif existing.status == ContentStatus.draft:
-        # Nothing approved yet to protect — overwrite in place.
-        existing.title = output.title
-        existing.language = output.language
-        existing.content = content
-        existing.estimated_duration_seconds = output.estimated_duration_seconds
-        script = existing
-    else:
-        # Never silently overwrite an approved version — start a new one.
-        script = Script(
-            project_id=project.id,
-            creator_id=creator_id,
-            version=existing.version + 1,
-            title=output.title,
-            language=output.language,
-            content=content,
-            estimated_duration_seconds=output.estimated_duration_seconds,
-            status=ContentStatus.draft,
-        )
-        db.add(script)
+    script = Script(
+        project_id=project.id,
+        creator_id=creator_id,
+        # Every rewrite is a new version, including one over a draft. It used
+        # to overwrite a draft in place, which meant a creator who preferred
+        # the previous take had no way back to it.
+        version=1 if previous is None else previous.version + 1,
+        title=output.title,
+        language=output.language,
+        content=render_script(beats),
+        estimated_duration_seconds=output.estimated_duration_seconds,
+        status=ContentStatus.draft,
+    )
+    db.add(script)
 
     if project.status in (ProjectStatus.draft, ProjectStatus.hooks):
         project.status = ProjectStatus.script
 
+    await db.commit()
+    await db.refresh(script)
+    return script
+
+
+async def generate_script(
+    db: AsyncSession, settings: Settings, creator_id: str, project_id: uuid.UUID
+) -> Script:
+    """The first script for a project. Returns the existing one untouched if
+    there already is one, so arriving at the step twice cannot cost a call."""
+    existing = await get_latest_script(db, project_id)
+    if existing is not None:
+        await project_service.get_owned_project(db, creator_id, project_id)
+        return existing
+    return await _write_script(db, settings, creator_id, project_id, previous=None)
+
+
+async def regenerate_script(
+    db: AsyncSession, settings: Settings, creator_id: str, project_id: uuid.UUID
+) -> Script:
+    """
+    Another take on the same hook, kept alongside the old one.
+
+    The hook is carried over verbatim: it was chosen a step earlier and a
+    regenerate is for a body that did not land, not for undoing that choice.
+    """
+    previous = await get_latest_script(db, project_id)
+    return await _write_script(db, settings, creator_id, project_id, previous=previous)
+
+
+async def list_script_versions(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID
+) -> list[Script]:
+    """Every version, newest first — so an earlier take stays reachable."""
+    await project_service.get_owned_project(db, creator_id, project_id)
+    result = await db.execute(
+        select(Script)
+        .where(Script.project_id == project_id)
+        .order_by(Script.version.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def restore_script_version(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, version: int
+) -> Script:
+    """
+    Brings an earlier version back as the current one.
+
+    Copied forward into a new version rather than deleting what came after:
+    changing your mind twice should cost nothing.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    result = await db.execute(
+        select(Script).where(Script.project_id == project_id, Script.version == version)
+    )
+    source = result.scalar_one_or_none()
+    if source is None:
+        raise NotFoundError("No such script version for this project.")
+
+    latest = await get_latest_script(db, project_id)
+    assert latest is not None  # `source` exists, so at least one version does
+    if latest.version == version:
+        return latest
+
+    script = Script(
+        project_id=project_id,
+        creator_id=creator_id,
+        version=latest.version + 1,
+        title=source.title,
+        language=source.language,
+        content=source.content,
+        estimated_duration_seconds=source.estimated_duration_seconds,
+        status=ContentStatus.draft,
+    )
+    db.add(script)
     await db.commit()
     await db.refresh(script)
     return script

@@ -34,3 +34,16 @@ export async function approveScript(projectId: string): Promise<Script> {
 export async function reopenScript(projectId: string): Promise<Script> {
   return api.post<Script>(`/projects/${projectId}/script/reopen`);
 }
+
+/** Every take written for this project, newest first. */
+export async function getScriptVersions(projectId: string): Promise<Script[]> {
+  return api.get<Script[]>(`/projects/${projectId}/script/versions`);
+}
+
+/** Copies an earlier version forward so it becomes the current one. */
+export async function restoreScriptVersion(
+  projectId: string,
+  version: number
+): Promise<Script> {
+  return api.post<Script>(`/projects/${projectId}/script/versions/${version}/restore`);
+}

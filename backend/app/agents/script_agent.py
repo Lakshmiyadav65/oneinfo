@@ -1,3 +1,4 @@
+import re
 from typing import cast
 
 from app.agents.prompting import build_knowledge_section
@@ -25,6 +26,63 @@ _LANGUAGE_INSTRUCTIONS = {
     ),
     "telugu": "Write every line in Telugu, using Telugu script.",
 }
+
+
+HOOK_LABEL = BEATS[0][0]
+
+# A label is a bare word or two on its own line. Bounded so a line of prose
+# can never be mistaken for one. Mirrors the frontend's script-beats parser.
+_LABEL = re.compile(r"^[A-Za-z][A-Za-z ]{0,23}$")
+
+
+def parse_script(content: str) -> list[ScriptBeat] | None:
+    """
+    Reads back what render_script wrote. None when the text is not in the
+    beat format - a script from before the format existed, or one edited
+    down into prose - so callers fall back rather than guessing at structure
+    that is not there.
+    """
+    blocks = content.strip().split("\n\n")
+    if len(blocks) < 2:
+        return None
+
+    beats: list[ScriptBeat] = []
+    for block in blocks:
+        lines = block.strip().split("\n")
+        if len(lines) < 2:
+            return None
+        label = lines[0].strip()
+        if not _LABEL.match(label):
+            return None
+        quoted = " ".join(line.strip() for line in lines[1:]).strip()
+        if len(quoted) < 2 or not quoted.startswith('"') or not quoted.endswith('"'):
+            return None
+        beats.append(ScriptBeat(label=label, line=quoted[1:-1].strip()))
+    return beats
+
+
+def carry_hook_over(beats: list[ScriptBeat], previous_content: str) -> list[ScriptBeat]:
+    """
+    Pins the new take's hook to the one already there.
+
+    A regenerate is for rewriting a body that did not land, and the hook was
+    chosen deliberately a step earlier - letting the model reword it each time
+    would throw away that choice. Done by substitution rather than by asking
+    the prompt nicely, because "keep this verbatim" is a request a model can
+    decline and this cannot be allowed to drift.
+    """
+    previous = parse_script(previous_content)
+    if not previous:
+        return beats
+    old_hook = next((b for b in previous if b.label.casefold() == HOOK_LABEL.casefold()), None)
+    if old_hook is None:
+        return beats
+    return [
+        b.model_copy(update={"line": old_hook.line})
+        if b.label.casefold() == HOOK_LABEL.casefold()
+        else b
+        for b in beats
+    ]
 
 
 def render_script(beats: list[ScriptBeat]) -> str:
