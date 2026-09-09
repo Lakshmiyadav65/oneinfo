@@ -23,6 +23,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
+import { parseScriptBeats, renderScriptBeats } from "@/lib/workflow/script-beats";
 import type { Script } from "@/types/script";
 
 function errorDescription(err: unknown): string | undefined {
@@ -151,14 +152,30 @@ function ScriptEditor({
   const router = useRouter();
   const { toast } = useToast();
   const [title, setTitle] = useState(script.title);
-  const [content, setContent] = useState(script.content);
+  // Beats when the script is in the agent's format, raw text when it isn't -
+  // an older script, or one edited down into prose. Exactly one is live; the
+  // other is the fallback the editor renders instead.
+  const [beats, setBeats] = useState(() => parseScriptBeats(script.content));
+  const [rawContent, setRawContent] = useState(script.content);
   const [isSaving, setIsSaving] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isReopening, setIsReopening] = useState(false);
 
   const isApproved = script.status === "approved";
+  // Derived rather than held: beats are what the creator types into, and
+  // normalizing them back into state on every keystroke would eat a trailing
+  // space as fast as it was typed.
+  const content = beats ? renderScriptBeats(beats) : rawContent;
   const isDirty = title !== script.title || content !== script.content;
+
+  function updateBeat(index: number, line: string) {
+    setBeats((current) =>
+      current
+        ? current.map((beat, i) => (i === index ? { ...beat, line } : beat))
+        : current
+    );
+  }
 
   async function handleSave() {
     setIsSaving(true);
@@ -238,14 +255,41 @@ function ScriptEditor({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="script-content">Content (v{script.version})</Label>
-            <Textarea
-              id="script-content"
-              rows={12}
-              value={content}
-              disabled={isApproved}
-              onChange={(e) => setContent(e.target.value)}
-            />
+            <Label htmlFor={beats ? "script-beat-0" : "script-content"}>
+              Content (v{script.version})
+            </Label>
+            {/*
+              One field per beat, with the label set apart from the words.
+              As one textarea the whole script read as an undifferentiated
+              block of text - the shape was in there, but nothing showed it.
+            */}
+            {beats ? (
+              <div className="space-y-4 rounded-md border border-border p-4">
+                {beats.map((beat, index) => (
+                  <div key={index} className="space-y-1.5">
+                    <span className="inline-flex rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                      {beat.label}
+                    </span>
+                    <Textarea
+                      id={`script-beat-${index}`}
+                      aria-label={beat.label}
+                      rows={2}
+                      value={beat.line}
+                      disabled={isApproved}
+                      onChange={(e) => updateBeat(index, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Textarea
+                id="script-content"
+                rows={12}
+                value={rawContent}
+                disabled={isApproved}
+                onChange={(e) => setRawContent(e.target.value)}
+              />
+            )}
           </div>
           {isApproved && (
             <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
