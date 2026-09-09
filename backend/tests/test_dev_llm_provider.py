@@ -36,7 +36,8 @@ async def test_generates_hook_list_within_schema_bounds(provider: DevLLMProvider
 async def test_generates_script_output(provider: DevLLMProvider):
     result = await provider.generate_structured("IDEA: guitar chords for beginners", ScriptOutput)
     assert isinstance(result, ScriptOutput)
-    assert result.script
+    assert [b.label for b in result.beats] == ["Hook", "Curiosity", "Value", "CTA"]
+    assert all(b.line for b in result.beats)
     assert result.estimated_duration_seconds > 0
 
 

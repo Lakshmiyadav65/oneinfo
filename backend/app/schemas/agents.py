@@ -32,10 +32,26 @@ class ResearchedHookList(BaseModel):
     recommended_index: int = 0
 
 
+class ScriptBeat(BaseModel):
+    """
+    One labelled beat of a script - Hook, Curiosity, Value, CTA.
+
+    A script used to come back as a single paragraph, which left the creator
+    editing a wall of text and gave no sign of the shape underneath it. The
+    beats are what a short video is actually built from, so they are named.
+
+    `line` is the spoken words alone. No label, no stage direction: it is
+    read aloud exactly as written.
+    """
+
+    label: str
+    line: str
+
+
 class ScriptOutput(BaseModel):
     title: str
     language: str = "english"
-    script: str
+    beats: list[ScriptBeat] = Field(min_length=2, max_length=6)
     estimated_duration_seconds: int
 
 

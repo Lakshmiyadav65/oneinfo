@@ -38,7 +38,13 @@ async def run_tanglish_agent(
         "SYSTEM: You are OneInfo's script localization assistant. Rewrite "
         f"the following English script as {instruction} — not a mechanical "
         "word-for-word translation. Preserve the hook's punch, the structure, "
-        "and roughly the same spoken length.\n\n"
+        "and roughly the same spoken length.\n"
+        # The script arrives as labelled beats. Localizing the labels too
+        # would break the format the storyboard reads dialogue out of.
+        "The script is written as labelled beats: a bare label on its own "
+        "line (Hook, Curiosity, Value, CTA) followed by the spoken line in "
+        "double quotes. Keep that exact layout, and keep the labels in "
+        "English, unchanged. Rewrite only the quoted lines.\n\n"
         f"ENGLISH SCRIPT: {english_script}\n"
     )
     result = await llm.generate_structured(prompt, TanglishOutput)

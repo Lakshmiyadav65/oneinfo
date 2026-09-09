@@ -69,6 +69,11 @@ async def run_storyboard_agent(
     prompt = (
         "SYSTEM: You are OneInfo's storyboard assistant. Break the "
         "approved script into an ordered sequence of short video scenes. "
+        "The script arrives as labelled beats: a bare label on its own line "
+        "(Hook, Curiosity, Value, CTA) followed by the spoken line in double "
+        "quotes. Only the quoted text is said out loud - never put a label "
+        "into a voiceover, and keep each voiceover in the same language as "
+        "the quoted line it came from. "
         "Each scene needs a duration in seconds, the voiceover line spoken "
         "during it, a visual_prompt describing what should be shown, and a "
         "short on-screen caption. Number scenes consecutively starting at 1, "

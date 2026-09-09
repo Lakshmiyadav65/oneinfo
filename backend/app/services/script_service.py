@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.script_agent import run_script_agent
+from app.agents.script_agent import render_script, run_script_agent
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationAppError
 from app.models.hook import Hook
@@ -43,8 +43,16 @@ async def generate_script(
 
     llm = get_llm_provider(settings)
     output = await run_script_agent(
-        llm, idea=project.idea, selected_hook_text=hook.text, knowledge_chunks=knowledge_texts
+        llm,
+        idea=project.idea,
+        selected_hook_text=hook.text,
+        knowledge_chunks=knowledge_texts,
+        # The project's language, not the agent's guess. The prompt used to
+        # say "in English" outright, and only landed in the creator's
+        # language when the selected hook happened to drag it there.
+        language=project.language,
     )
+    content = render_script(output.beats)
 
     existing = await get_latest_script(db, project.id)
     if existing is None:
@@ -54,7 +62,7 @@ async def generate_script(
             version=1,
             title=output.title,
             language=output.language,
-            content=output.script,
+            content=content,
             estimated_duration_seconds=output.estimated_duration_seconds,
             status=ContentStatus.draft,
         )
@@ -63,7 +71,7 @@ async def generate_script(
         # Nothing approved yet to protect — overwrite in place.
         existing.title = output.title
         existing.language = output.language
-        existing.content = output.script
+        existing.content = content
         existing.estimated_duration_seconds = output.estimated_duration_seconds
         script = existing
     else:
@@ -74,7 +82,7 @@ async def generate_script(
             version=existing.version + 1,
             title=output.title,
             language=output.language,
-            content=output.script,
+            content=content,
             estimated_duration_seconds=output.estimated_duration_seconds,
             status=ContentStatus.draft,
         )

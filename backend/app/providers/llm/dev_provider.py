@@ -7,6 +7,7 @@ from app.schemas.agents import (
     QAResult,
     ResearchContext,
     ResearchedHookList,
+    ScriptBeat,
     ScriptOutput,
     StoryboardOutput,
     StoryboardScene,
@@ -91,11 +92,12 @@ class DevLLMProvider:
             return ScriptOutput(
                 title=snippet.title(),
                 language="english",
-                script=(
-                    f"{_TEMPLATE_TAG} Opening: Let's talk about {snippet}.\n"
-                    f"Body: Here is what you need to know about {snippet}.\n"
-                    "Closing: Follow for more."
-                ),
+                beats=[
+                    ScriptBeat(label="Hook", line=f"{_TEMPLATE_TAG} Let's talk about {snippet}."),
+                    ScriptBeat(label="Curiosity", line=f"Most people get {snippet} wrong."),
+                    ScriptBeat(label="Value", line=f"Here is what to know about {snippet}."),
+                    ScriptBeat(label="CTA", line="Follow for more."),
+                ],
                 estimated_duration_seconds=45,
             )
 
