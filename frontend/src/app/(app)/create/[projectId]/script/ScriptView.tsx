@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
@@ -140,6 +140,60 @@ function WritingScriptCard() {
   );
 }
 
+/**
+ * One spoken line, exactly as tall as the words in it.
+ *
+ * The shared Textarea carries a min-h-24 floor, which is right for a page of
+ * prose and far too much for a sentence — four beats of it left the step
+ * mostly empty box. This overrides the floor and grows the field to its own
+ * content instead, so a one-line beat occupies one line.
+ */
+function BeatLine({
+  id,
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      // Collapse first: scrollHeight only shrinks once the box is smaller
+      // than its content, so without this the field can grow but never
+      // shrink back when text is deleted.
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    fit();
+    // A narrower window re-wraps the line, which changes how tall it needs
+    // to be.
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [value]);
+
+  return (
+    <Textarea
+      ref={ref}
+      id={id}
+      aria-label={label}
+      rows={1}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className="min-h-0 resize-none overflow-hidden"
+    />
+  );
+}
+
 function ScriptEditor({
   projectId,
   script,
@@ -264,19 +318,18 @@ function ScriptEditor({
               block of text - the shape was in there, but nothing showed it.
             */}
             {beats ? (
-              <div className="space-y-4 rounded-md border border-border p-4">
+              <div className="space-y-3 rounded-md border border-border p-3">
                 {beats.map((beat, index) => (
-                  <div key={index} className="space-y-1.5">
+                  <div key={index} className="space-y-1">
                     <span className="inline-flex rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-primary">
                       {beat.label}
                     </span>
-                    <Textarea
+                    <BeatLine
                       id={`script-beat-${index}`}
-                      aria-label={beat.label}
-                      rows={2}
+                      label={beat.label}
                       value={beat.line}
                       disabled={isApproved}
-                      onChange={(e) => updateBeat(index, e.target.value)}
+                      onChange={(line) => updateBeat(index, line)}
                     />
                   </div>
                 ))}
