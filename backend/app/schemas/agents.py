@@ -108,3 +108,32 @@ class IdeaSuggestion(BaseModel):
 
 class IdeaSuggestionList(BaseModel):
     ideas: list[IdeaSuggestion] = Field(min_length=1, max_length=8)
+
+
+class LinkTakeaway(BaseModel):
+    """One fact worth putting in a video, in the creator's own terms."""
+
+    label: str
+    detail: str
+
+
+class LinkSummary(BaseModel):
+    """
+    What a pasted page is actually about.
+
+    Deliberately not a summary paragraph. A creator scripting a reel needs
+    the specifics - the date, the prize, who can enter - because those are
+    what a viewer acts on, and a paragraph rounds all of them off.
+    """
+
+    topic: str
+    audience: str
+    # The details a viewer would need: dates, eligibility, amounts, venue.
+    takeaways: list[LinkTakeaway]
+    # What the page wants the reader to do, if it asks for anything.
+    call_to_action: str | None = None
+    # False when the page turned out to be a menu, a login wall or a stub,
+    # so the UI can say the link gave us nothing rather than showing an
+    # invented topic drawn from navigation text.
+    is_substantive: bool = True
+
