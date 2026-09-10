@@ -39,6 +39,15 @@ class KnowledgeDocument(Base):
         String, nullable=False, default=KnowledgeStatus.processing, index=True
     )
     storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Set when this document came from a web page the creator pasted. Used to
+    # recognise a link that has already been read, so pasting the same URL
+    # into a second project costs neither a fetch nor a model call.
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # The takeaways pulled from that page, kept apart from the chunked text.
+    # Retrieval is a similarity search and can miss; a project whose whole
+    # idea is one link cannot afford to be told about that link only when
+    # the embedding happens to match.
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

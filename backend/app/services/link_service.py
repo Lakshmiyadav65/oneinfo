@@ -25,6 +25,20 @@ class Scheduler(Protocol):
 MIN_USEFUL_CHARS = 300
 
 
+def _as_summary(url: str, title: str, summary: LinkSummary) -> str:
+    """The takeaways as text, for a prompt to treat as fact."""
+    lines = [f"Source: {url}", f"Title: {title}"]
+    if summary.topic:
+        lines.append(f"What it is: {summary.topic}")
+    if summary.audience:
+        lines.append(f"Who it is for: {summary.audience}")
+    for takeaway in summary.takeaways:
+        lines.append(f"{takeaway.label}: {takeaway.detail}")
+    if summary.call_to_action:
+        lines.append(f"Call to action: {summary.call_to_action}")
+    return "\n".join(lines)
+
+
 def _as_document(url: str, title: str, summary: LinkSummary, page_text: str) -> str:
     """
     What gets filed in My Knowledge.
@@ -55,9 +69,10 @@ async def read_link(
     creator_id: str,
     url: str,
     *,
-    schedule: Any,
+    schedule: Any = None,
     save_to_knowledge: bool,
     language: str = "english",
+    ingest_inline: bool = False,
 ) -> LinkReadOut:
     """
     Fetches one page, pulls out what a video could be built on, and
@@ -99,19 +114,26 @@ async def read_link(
             ),
         )
 
+    summary_text = _as_summary(page.url, page.title, summary)
+
     saved = False
     if save_to_knowledge:
         document = await knowledge_service.create_pending_document(
             db, creator_id, page.title[:200], KnowledgeSourceType.text, storage_key=None
         )
-        # Ingestion runs after the response, the same way a pasted document
-        # does: chunking and embedding is the slow half, and the creator is
-        # already waiting on a fetch and a model call.
-        schedule.add_task(
-            process_knowledge_document,
-            document.id,
-            _as_document(page.url, page.title, summary, page.text),
-        )
+        document.source_url = page.url
+        document.summary = summary_text
+        await db.commit()
+
+        content = _as_document(page.url, page.title, summary, page.text)
+        if ingest_inline:
+            # The caller is about to write from this page, and a document
+            # still being chunked is a document the next step cannot use.
+            await process_knowledge_document(document.id, content)
+        else:
+            # Otherwise after the response, the same way a pasted document
+            # goes: chunking and embedding is the slow half.
+            schedule.add_task(process_knowledge_document, document.id, content)
         saved = True
 
     return LinkReadOut(
@@ -123,6 +145,7 @@ async def read_link(
         call_to_action=summary.call_to_action,
         characters=len(page.text),
         saved_as_knowledge=saved,
+        summary_text=summary_text,
     )
 
 

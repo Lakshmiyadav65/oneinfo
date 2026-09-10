@@ -10,7 +10,7 @@ from app.models.hook import Hook
 from app.models.project import ProjectStatus
 from app.providers.llm import get_llm_provider
 from app.schemas.agents import ResearchContext
-from app.services import project_service
+from app.services import link_context, project_service
 from app.services.rag_service import retrieve
 
 
@@ -18,6 +18,15 @@ async def generate_hooks(
     db: AsyncSession, settings: Settings, creator_id: str, project_id: uuid.UUID
 ) -> list[Hook]:
     project = await project_service.get_owned_project(db, creator_id, project_id)
+
+    # An idea that is mostly a link has no subject in it. Left alone, the
+    # agent takes its subject from retrieved knowledge instead - which is how
+    # a project whose idea was an Odoo event page came back with hooks about
+    # a Sarvam hackathon, the nearest thing in this creator's filed material.
+    # So the page is read first, and if it cannot be read nothing is
+    # generated: a confident video about the wrong event is far worse than a
+    # step that stops and says why.
+    source = await link_context.for_idea(db, settings, creator_id, project)
 
     chunks = await retrieve(db, settings, creator_id, project.idea, k=settings.rag_top_k)
     knowledge_texts = [chunk.content for chunk in chunks]
@@ -40,6 +49,7 @@ async def generate_hooks(
     hook_list = await run_hook_agent(
         llm,
         idea=project.idea,
+        source=source,
         research=cached_research,
         knowledge_chunks=knowledge_texts,
         count=settings.hook_candidate_count,

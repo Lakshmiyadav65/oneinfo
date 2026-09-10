@@ -22,6 +22,10 @@ class LinkReadOut(BaseModel):
     # result apart from a thorough one.
     characters: int = 0
     saved_as_knowledge: bool = False
+    # The takeaways as a block of text, for handing to a prompt. Kept beside
+    # the structured list rather than rebuilt by each caller, so every step
+    # sees the same wording.
+    summary_text: str | None = None
     error: str | None = None
 
 
