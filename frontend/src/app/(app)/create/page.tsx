@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { createProject, suggestIdeas } from "@/lib/api/projects";
 import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
+import { LinkReader } from "@/components/create/LinkReader";
 import { CREATE_STEPS, stepIndex } from "@/lib/workflow/steps";
 import { type IdeaSuggestions } from "@/types/project";
 
@@ -78,6 +79,13 @@ export default function CreateVideoPage() {
         has already written their idea and is reaching for the button.
       */}
       <CreatorFacePrompt />
+
+      {/*
+        Above the form, and only when there is actually a link to read. The
+        creator has to see what the page says before hooks are generated
+        from it - afterwards is too late to notice we read the wrong page.
+      */}
+      <LinkReader idea={idea} />
 
       <Card>
         <CardContent className="space-y-6 p-6 sm:p-8">

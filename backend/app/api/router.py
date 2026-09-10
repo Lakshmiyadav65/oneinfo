@@ -8,6 +8,7 @@ from app.api.routes import (
     health,
     hooks,
     knowledge,
+    links,
     media,
     projects,
     script,
@@ -20,6 +21,7 @@ api_router.include_router(health.router)
 api_router.include_router(creators.router)
 api_router.include_router(creator_face.router)
 api_router.include_router(knowledge.router)
+api_router.include_router(links.router)
 api_router.include_router(environment_setups.router)
 api_router.include_router(projects.router)
 api_router.include_router(hooks.router)
