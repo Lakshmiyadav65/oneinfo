@@ -19,6 +19,8 @@ class StoryboardSceneOut(BaseModel):
     # service fills the default in rather than making every caller handle a
     # null shape.
     environment: SceneEnvironment
+    # Which take the final video uses. Zero-based.
+    selected_take: int = 0
     # True once the creator has edited the visual description by hand, which
     # is what stops a change of setup from quietly rewriting their words.
     visual_is_custom: bool

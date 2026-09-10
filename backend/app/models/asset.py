@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,4 +31,8 @@ class Asset(Base):
     storage_key: Mapped[str] = mapped_column(String, nullable=False)
     mime_type: Mapped[str] = mapped_column(String, nullable=False)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Which take this is, when a run generated several of the same scene.
+    # Zero-based. Every take is kept: they were all paid for, and the point
+    # of asking for four is to choose between them afterwards.
+    take_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

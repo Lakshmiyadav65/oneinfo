@@ -15,6 +15,7 @@ import {
   setSceneVisual,
 } from "@/lib/api/storyboard";
 import { onCameraSurcharge, sceneCost } from "@/lib/workflow/scene-cost";
+import type { OutputSettings } from "@/types/output-settings";
 import { cn } from "@/lib/utils/cn";
 import type { EnvironmentPreset, SceneEnvironment } from "@/types/environment";
 import type { Storyboard, StoryboardScene } from "@/types/storyboard";
@@ -43,11 +44,14 @@ export function SceneCard({
   projectId,
   scene,
   canGoOnCamera,
+  output,
   onUpdated,
 }: {
   projectId: string;
   scene: StoryboardScene;
   canGoOnCamera: boolean;
+  /** Prices this scene: tier, resolution and take count all scale it. */
+  output: OutputSettings;
   onUpdated: (storyboard: Storyboard) => void;
 }) {
   const { toast } = useToast();
@@ -117,7 +121,7 @@ export function SceneCard({
           </div>
           <p className="text-xs text-muted-foreground">
             {scene.duration_seconds}s &middot;{" "}
-            {sceneCost(scene.duration_seconds, scene.features_creator)}
+            {sceneCost(scene.duration_seconds, scene.features_creator, output)}
           </p>
         </div>
 
@@ -248,7 +252,7 @@ export function SceneCard({
           </span>
           {canGoOnCamera && !scene.features_creator && (
             <span className="text-xs text-muted-foreground">
-              becomes 8s &middot; +{onCameraSurcharge(scene.duration_seconds)}
+              becomes 8s &middot; +{onCameraSurcharge(scene.duration_seconds, output)}
             </span>
           )}
         </label>
@@ -256,7 +260,7 @@ export function SceneCard({
         <ScenePreview
           projectId={projectId}
           sceneId={scene.id}
-          cost={sceneCost(scene.duration_seconds, scene.features_creator)}
+          cost={sceneCost(scene.duration_seconds, scene.features_creator, output)}
         />
       </CardContent>
     </Card>

@@ -3,7 +3,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,7 +14,7 @@ from app.models.asset import Asset, AssetType
 from app.models.creator import Creator
 from app.models.generation_job import GenerationJob, JobStatus
 from app.models.project import Project, ProjectStatus
-from app.models.storyboard import Storyboard
+from app.models.storyboard import Storyboard, StoryboardScene
 from app.models.video_output import VideoOutput
 from app.providers.ffmpeg_runner import FFmpegError, probe_duration_seconds
 from app.providers.storage import get_storage_provider
@@ -24,7 +24,9 @@ from app.providers.video.base import (
     VideoProvider,
     snap_duration,
 )
+from app.schemas.output_settings import ModelTier
 from app.services import creator_face_service, project_service
+from app.services.project_service import output_size, project_output_settings
 from app.services.rendering_service import render_final_video
 
 
@@ -179,28 +181,103 @@ async def get_video_output(db: AsyncSession, creator_id: str, project_id: uuid.U
 
 
 async def get_scene_asset(
-    db: AsyncSession, creator_id: str, project_id: uuid.UUID, scene_id: uuid.UUID
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    take: int | None = None,
 ) -> Asset:
     """
     The newest generated clip for one scene. Newest rather than only, since
     regenerating a scene writes a fresh asset each time.
+
+    `take` picks one of several takes from the same run. Omitted, it returns
+    whichever take the scene is currently set to use, so a caller that knows
+    nothing about takes still gets the clip the final video will contain.
     """
     await project_service.get_owned_project(db, creator_id, project_id)
+
+    if take is None:
+        scene = await db.get(StoryboardScene, scene_id)
+        take = scene.selected_take if scene else 0
+
+    query = select(Asset).where(
+        Asset.project_id == project_id,
+        Asset.scene_id == scene_id,
+        Asset.creator_id == creator_id,
+        Asset.asset_type == AssetType.scene_video,
+        Asset.take_index == take,
+    )
+    result = await db.execute(query.order_by(Asset.created_at.desc()).limit(1))
+    asset = result.scalar_one_or_none()
+
+    # Clips generated before takes existed carry take_index 0 by migration
+    # default, so this only fires when a caller asks for a take that run
+    # never produced.
+    if asset is None and take != 0:
+        result = await db.execute(
+            query.where(Asset.take_index == 0).order_by(Asset.created_at.desc()).limit(1)
+        )
+        asset = result.scalar_one_or_none()
+
+    if asset is None:
+        raise NotFoundError("This scene hasn't been generated yet.")
+    return asset
+
+
+async def get_scene(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, scene_id: uuid.UUID
+) -> StoryboardScene:
+    await project_service.get_owned_project(db, creator_id, project_id)
+    scene = await db.get(StoryboardScene, scene_id)
+    if scene is None or scene.creator_id != creator_id:
+        raise NotFoundError("No such scene in this storyboard.")
+    return scene
+
+
+async def count_scene_takes(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, scene_id: uuid.UUID
+) -> int:
+    """How many takes of this scene are on hand to choose between."""
+    await project_service.get_owned_project(db, creator_id, project_id)
     result = await db.execute(
-        select(Asset)
-        .where(
+        select(func.count(func.distinct(Asset.take_index))).where(
             Asset.project_id == project_id,
             Asset.scene_id == scene_id,
             Asset.creator_id == creator_id,
             Asset.asset_type == AssetType.scene_video,
         )
-        .order_by(Asset.created_at.desc())
-        .limit(1)
     )
-    asset = result.scalar_one_or_none()
-    if asset is None:
-        raise NotFoundError("This scene hasn't been generated yet.")
-    return asset
+    return int(result.scalar_one() or 0)
+
+
+async def select_scene_take(
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    take: int,
+) -> StoryboardScene:
+    """
+    Picks which take the final video uses for one scene.
+
+    Changes nothing that has already been rendered: the finished video is
+    only rebuilt when the creator asks for it, so choosing a take here costs
+    nothing and is freely reversible.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    scene = await db.get(StoryboardScene, scene_id)
+    if scene is None or scene.creator_id != creator_id:
+        raise NotFoundError("No such scene in this storyboard.")
+
+    available = await count_scene_takes(db, creator_id, project_id, scene_id)
+    if take < 0 or take >= max(available, 1):
+        raise ValidationAppError("That take hasn't been generated for this scene.")
+
+    scene.selected_take = take
+    await db.commit()
+    await db.refresh(scene)
+    return scene
 
 
 async def _wait_for_completion(
@@ -267,6 +344,7 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
 
             video_provider = get_video_provider(settings)
             storage = get_storage_provider(settings)
+            output = project_output_settings(project)
 
             # Fetched once, not per scene: the same photos go to every
             # on-camera scene, and re-reading them from storage each time
@@ -293,39 +371,53 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                         # Only on-camera scenes carry the face, so only they
                         # get routed to the pricier reference model.
                         reference_images=face_images if scene.features_creator else [],
-                        # Matched to the size the scenes are stitched at, so
-                        # a vertical project never pays for clips that get
-                        # pillarboxed at render.
-                        aspect_ratio=(
-                            "9:16"
-                            if settings.video_height > settings.video_width
-                            else "16:9"
-                        ),
+                        aspect_ratio=output.aspect_ratio.value,
+                        resolution=output.resolution.value,
+                        sample_count=output.takes,
+                        prefer_reference_model=output.model_tier is ModelTier.fast,
                     )
                 )
                 await _wait_for_completion(video_provider, provider_job_id)
-                video_bytes = await video_provider.download_result(provider_job_id)
+                takes = await video_provider.download_all_results(provider_job_id)
 
-                local_path = Path(tempfile.gettempdir()) / f"oneinfo-scene-{uuid.uuid4()}.mp4"
-                local_path.write_bytes(video_bytes)
-                temp_files.append(local_path)
-
-                scene_duration = await probe_duration_seconds(settings.ffprobe_path, str(local_path))
-
-                storage_key = f"{project.creator_id}/{project.id}/scenes/{scene.id}.mp4"
-                await asyncio.to_thread(storage.save, storage_key, video_bytes)
-                db.add(
-                    Asset(
-                        creator_id=project.creator_id,
-                        project_id=project.id,
-                        scene_id=scene.id,
-                        asset_type=AssetType.scene_video,
-                        storage_key=storage_key,
-                        mime_type="video/mp4",
-                        duration_seconds=scene_duration,
+                # Every take is saved, because every take was billed. The
+                # creator picks between them afterwards; throwing the rest
+                # away here would charge four times for one clip.
+                take_paths: list[Path] = []
+                for take_index, video_bytes in enumerate(takes):
+                    local_path = (
+                        Path(tempfile.gettempdir()) / f"oneinfo-scene-{uuid.uuid4()}.mp4"
                     )
-                )
-                render_inputs.append(local_path)
+                    local_path.write_bytes(video_bytes)
+                    temp_files.append(local_path)
+                    take_paths.append(local_path)
+
+                    take_duration = await probe_duration_seconds(
+                        settings.ffprobe_path, str(local_path)
+                    )
+                    storage_key = (
+                        f"{project.creator_id}/{project.id}/scenes/"
+                        f"{scene.id}-take{take_index}.mp4"
+                    )
+                    await asyncio.to_thread(storage.save, storage_key, video_bytes)
+                    db.add(
+                        Asset(
+                            creator_id=project.creator_id,
+                            project_id=project.id,
+                            scene_id=scene.id,
+                            asset_type=AssetType.scene_video,
+                            storage_key=storage_key,
+                            mime_type="video/mp4",
+                            duration_seconds=take_duration,
+                            take_index=take_index,
+                        )
+                    )
+
+                # A fresh run invalidates whichever take was picked last time:
+                # that clip no longer exists, so the choice cannot carry over.
+                if scene.selected_take >= len(take_paths):
+                    scene.selected_take = 0
+                render_inputs.append(take_paths[scene.selected_take])
                 job.scenes_completed = index
                 await db.commit()
 
@@ -343,7 +435,9 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             job.current_stage = "Rendering final video"
             await db.commit()
 
-            final_path, duration = await render_final_video(settings, render_inputs)
+            final_path, duration = await render_final_video(
+                settings, render_inputs, size=output_size(settings, output)
+            )
             temp_files.append(final_path)
 
             if not final_path.exists() or final_path.stat().st_size == 0 or duration <= 0:

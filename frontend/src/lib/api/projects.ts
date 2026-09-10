@@ -1,4 +1,5 @@
 import type { SceneEnvironment } from "@/types/environment";
+import type { OutputSettings } from "@/types/output-settings";
 import { api, ApiError, ApiNotConfiguredError } from "@/lib/api/client";
 import type { IdeaSuggestions, Project, ProjectLanguage } from "@/types/project";
 
@@ -64,4 +65,15 @@ export async function setProjectEnvironment(
     apply_to_all: options.applyToAll ?? false,
     reset_to_preset: options.resetToPreset ?? false,
   });
+}
+
+/**
+ * Changes what this project generates at. Nothing already generated is
+ * re-rendered — see project_service.set_output_settings.
+ */
+export function setOutputSettings(
+  projectId: string,
+  output: OutputSettings
+): Promise<Project> {
+  return api.patch<Project>(`/projects/${projectId}/output-settings`, output);
 }

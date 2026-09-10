@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Film } from "lucide-react";
-import { getSceneClip } from "@/lib/api/generation";
+import { getSceneClip, getSceneTakes, selectSceneTake } from "@/lib/api/generation";
 import { Spinner } from "@/components/ui/Spinner";
+import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils/cn";
 import type { GenerationJob } from "@/types/generation";
 import type { StoryboardScene } from "@/types/storyboard";
@@ -45,7 +46,10 @@ function ClipTile({
   index: number;
   state: ClipState;
 }) {
+  const { toast } = useToast();
   const [clipUrl, setClipUrl] = useState<string | null>(null);
+  const [takeCount, setTakeCount] = useState(0);
+  const [take, setTake] = useState(scene.selected_take);
   const objectUrl = useRef<string | null>(null);
 
   // Fetched once the clip exists, and only then: asking for a scene that has
@@ -53,7 +57,7 @@ function ClipTile({
   useEffect(() => {
     if (state !== "done") return;
     let cancelled = false;
-    getSceneClip(projectId, scene.id)
+    getSceneClip(projectId, scene.id, take)
       .then((blob) => {
         if (cancelled) return;
         if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
@@ -66,7 +70,41 @@ function ClipTile({
     return () => {
       cancelled = true;
     };
+  }, [projectId, scene.id, state, take]);
+
+  // How many takes there are to choose between. Only asked once the scene is
+  // done, since before that the answer is always none.
+  useEffect(() => {
+    if (state !== "done") return;
+    let cancelled = false;
+    getSceneTakes(projectId, scene.id)
+      .then((result) => {
+        if (cancelled) return;
+        setTakeCount(result.takes);
+        setTake(result.selected_take);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [projectId, scene.id, state]);
+
+  async function chooseTake(next: number) {
+    const previous = take;
+    // Switched immediately: picking a take is free and reversible, so making
+    // the creator wait on a round trip to see the other one is pure friction.
+    setTake(next);
+    try {
+      await selectSceneTake(projectId, scene.id, next);
+    } catch (err) {
+      setTake(previous);
+      toast({
+        variant: "destructive",
+        title: "Couldn't switch take",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  }
 
   useEffect(
     () => () => {
@@ -120,6 +158,32 @@ function ClipTile({
         it is also the thing most worth checking came out in the right
         language.
       */}
+      {/*
+        Only shown when there is a choice. One take is not a decision, and a
+        row of one button implies there should be more.
+      */}
+      {takeCount > 1 && (
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Take">
+          {Array.from({ length: takeCount }, (_, index) => (
+            <button
+              key={index}
+              type="button"
+              aria-pressed={index === take}
+              onClick={() => void chooseTake(index)}
+              className={cn(
+                "rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                index === take
+                  ? "border-primary bg-primary/15 text-foreground"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              )}
+            >
+              Take {index + 1}
+            </button>
+          ))}
+        </div>
+      )}
+
       <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
         {scene.voiceover}
       </p>

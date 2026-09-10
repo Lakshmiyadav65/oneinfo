@@ -46,6 +46,30 @@ export async function generateScene(
   );
 }
 
-export async function getSceneClip(projectId: string, sceneId: string): Promise<Blob> {
-  return api.getBlob(`/projects/${projectId}/scenes/${sceneId}/file`);
+export async function getSceneClip(
+  projectId: string,
+  sceneId: string,
+  /** One of several takes. Omitted, the server serves the one in use. */
+  take?: number
+): Promise<Blob> {
+  const suffix = take === undefined ? "" : `?take=${take}`;
+  return api.getBlob(`/projects/${projectId}/scenes/${sceneId}/file${suffix}`);
+}
+
+export type SceneTakes = { takes: number; selected_take: number };
+
+export function getSceneTakes(projectId: string, sceneId: string): Promise<SceneTakes> {
+  return api.get<SceneTakes>(`/projects/${projectId}/scenes/${sceneId}/takes`);
+}
+
+/**
+ * Picks the take this scene contributes to the final video. Costs nothing
+ * and is reversible: the finished video is only rebuilt on request.
+ */
+export function selectSceneTake(
+  projectId: string,
+  sceneId: string,
+  take: number
+): Promise<SceneTakes> {
+  return api.post<SceneTakes>(`/projects/${projectId}/scenes/${sceneId}/takes/${take}`, {});
 }

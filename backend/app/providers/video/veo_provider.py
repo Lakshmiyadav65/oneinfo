@@ -77,12 +77,19 @@ class VeoVideoProvider:
         parameters: dict = {
             "durationSeconds": request.duration_seconds,
             "aspectRatio": request.aspect_ratio,
+            "resolution": request.resolution,
+            # Veo returns this many videos from the one operation, and bills
+            # for each. Sent always rather than only when above one, so the
+            # request shape does not change with the setting.
+            "sampleCount": request.sample_count,
         }
 
         # Only a request that actually carries a face goes to the reference
         # model: it costs three times the Lite tier per second, and Lite
         # rejects reference images outright rather than ignoring them.
         model = self._model
+        if request.prefer_reference_model:
+            model = self._reference_model
         if request.reference_images:
             model = self._reference_model
             instance["referenceImages"] = [
@@ -153,6 +160,16 @@ class VeoVideoProvider:
         return VideoJobStatus(status="completed")
 
     async def download_result(self, job_id: str) -> bytes:
+        return (await self.download_all_results(job_id))[0]
+
+    async def download_all_results(self, job_id: str) -> list[bytes]:
+        """
+        Every take the operation produced, in the order Veo returned them.
+
+        All of them are kept because all of them were billed. A run that
+        asked for four takes and threw three away would be paying four times
+        the price for exactly the old behaviour.
+        """
         tracked = self._operations.get(job_id)
         if tracked is None:
             raise VeoProviderError("Unknown video job id.")
@@ -163,10 +180,10 @@ class VeoVideoProvider:
         # not response.predictions[] â€” that was the assumed shape before this
         # was ever run for real.)
         try:
-            b64_video = data["response"]["videos"][0]["bytesBase64Encoded"]
-        except (KeyError, IndexError) as exc:
+            videos = data["response"]["videos"]
+            return [base64.b64decode(video["bytesBase64Encoded"]) for video in videos]
+        except (KeyError, IndexError, TypeError) as exc:
             raise VeoProviderError("Veo returned an unexpected response shape.") from exc
-        return base64.b64decode(b64_video)
 
     async def _fetch_operation(self, operation_name: str, model: str) -> dict:
         async with httpx.AsyncClient(timeout=30.0) as client:

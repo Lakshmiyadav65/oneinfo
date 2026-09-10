@@ -60,6 +60,10 @@ class StoryboardScene(Base):
     # The filming setup, as structured values. See schemas/environment.py.
     # Null on scenes written before setups existed; read as the default.
     environment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Which take of this scene the final video uses, when more than one was
+    # generated. Zero-based, and left at 0 unless the creator picks another:
+    # a run with takes=1 has exactly one, and nothing to choose between.
+    selected_take: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Whether the creator is on camera in this scene. Drives both look and
     # cost: only these scenes attach face references, and only these pay the
     # reference model's rate (3-8x the Lite tier). B-roll stays cheap.

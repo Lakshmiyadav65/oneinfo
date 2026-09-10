@@ -13,6 +13,8 @@ export type StoryboardScene = {
   environment: SceneEnvironment;
   /** True once the creator has written the visual description themselves. */
   visual_is_custom: boolean;
+  /** Which take the final video uses, when a run produced several. */
+  selected_take: number;
 };
 
 export type Storyboard = {

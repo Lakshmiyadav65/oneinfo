@@ -36,6 +36,11 @@ class Project(Base):
     # The filming setup new scenes start from, so a creator chooses it once
     # rather than once per scene. Null means the built-in default.
     default_environment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # What the video is generated at: shape, resolution, model tier and how
+    # many takes of each scene. Every one of these changes what a run costs,
+    # which is why they belong to the creator and not to a config file. Null
+    # on projects created before the panel existed; read as the defaults.
+    output_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # True when nobody typed a title, so the research agent's topic may
     # replace the truncated idea standing in for one.
     title_is_auto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

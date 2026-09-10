@@ -29,3 +29,10 @@ class VideoOutputOut(BaseModel):
     duration_seconds: float | None
     file_size_bytes: int | None
     url: str
+
+
+class SceneTakesOut(BaseModel):
+    """What there is to choose between for one scene, and what is chosen."""
+
+    takes: int
+    selected_take: int
