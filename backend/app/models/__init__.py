@@ -1,6 +1,7 @@
 from app.models.asset import Asset
 from app.models.creator import Creator
 from app.models.creator_face import CreatorFaceImage
+from app.models.environment_setup import EnvironmentSetup
 from app.models.generation_job import GenerationJob
 from app.models.hook import Hook
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
@@ -14,6 +15,7 @@ __all__ = [
     "Asset",
     "Creator",
     "CreatorFaceImage",
+    "EnvironmentSetup",
     "GenerationJob",
     "Hook",
     "KnowledgeChunk",

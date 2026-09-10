@@ -249,6 +249,7 @@ export function StoryboardView({ projectId }: { projectId: string }) {
                 idPrefix="project-default"
                 environment={projectData.default_environment}
                 disabled={savingDefault}
+                showSaved
                 onPresetChange={(preset: EnvironmentPreset) =>
                   requestDefault(
                     { ...projectData.default_environment, preset },

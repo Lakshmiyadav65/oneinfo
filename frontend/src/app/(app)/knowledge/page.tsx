@@ -5,6 +5,7 @@ import { BookOpen, Plus, Trash2 } from "lucide-react";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { deleteKnowledge, listKnowledge } from "@/lib/api/knowledge";
 import { AddKnowledgeDialog } from "@/components/knowledge/AddKnowledgeDialog";
+import { EnvironmentSetupLibrary } from "@/components/knowledge/EnvironmentSetupLibrary";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -116,6 +117,14 @@ export default function KnowledgePage() {
           ))}
         </div>
       )}
+
+      {/*
+        Below the documents, not beside them. Both are the creator's own
+        reusable material, but a setup is picked and applied while a document
+        is read by the agents - mixing them into one list would suggest they
+        do the same job.
+      */}
+      <EnvironmentSetupLibrary />
     </div>
   );
 }

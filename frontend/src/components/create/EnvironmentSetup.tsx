@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Label } from "@/components/ui/Label";
 import { Textarea } from "@/components/ui/Textarea";
+import { SavedSetups } from "@/components/create/SavedSetups";
 import { cn } from "@/lib/utils/cn";
 import {
   BACKGROUNDS,
@@ -72,6 +73,7 @@ export function EnvironmentSetup({
   idPrefix,
   environment,
   disabled = false,
+  showSaved = false,
   onPresetChange,
   onChange,
 }: {
@@ -79,6 +81,8 @@ export function EnvironmentSetup({
   idPrefix: string;
   environment: SceneEnvironment;
   disabled?: boolean;
+  /** Offers the creator's saved setups, and the option to keep this one. */
+  showSaved?: boolean;
   /** A preset chip: the server rebuilds the controls behind it. */
   onPresetChange: (preset: EnvironmentPreset) => void;
   /** One control nudged: everything else stays as it is. */
@@ -120,6 +124,15 @@ export function EnvironmentSetup({
           Choose how this should look. You don&apos;t need to write a prompt.
         </p>
       </div>
+
+      {/*
+        Saved setups first, because reusing one is the shortest path through
+        this panel. Only shown where reuse makes sense - a single scene's
+        override is not a look worth keeping under the creator's name.
+      */}
+      {showSaved && (
+        <SavedSetups environment={environment} disabled={disabled} onApply={onChange} />
+      )}
 
       {/*
         Wraps on a narrow screen rather than scrolling: a chip that is off the

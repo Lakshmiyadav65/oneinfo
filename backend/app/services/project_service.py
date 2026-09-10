@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
 from app.models.project import Project, ProjectStatus
+from app.services import environment_setup_service
 
 
 async def create_project(
@@ -20,11 +21,18 @@ async def create_project(
     chosen_title = (title or "").strip()
     if language is None:
         language = await _last_used_language(db, creator_id)
+
+    # The whole point of saving a setup: a creator who marked one as their
+    # usual gets it on the next project without opening the panel. Nothing
+    # marked means the built-in default, exactly as before.
+    default_setup = await environment_setup_service.get_default_setup(db, creator_id)
+
     project = Project(
         creator_id=creator_id,
         title=chosen_title or idea.strip()[:80],
         idea=idea,
         language=language,
+        default_environment=default_setup.environment if default_setup else None,
         title_is_auto=not chosen_title,
         status=ProjectStatus.draft,
     )
