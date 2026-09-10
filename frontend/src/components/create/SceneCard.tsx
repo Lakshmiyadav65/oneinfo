@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Textarea";
+import { VisualPrompt } from "@/components/create/VisualPrompt";
 import { useToast } from "@/components/ui/Toast";
 import {
   setSceneEnvironment,
@@ -205,12 +206,12 @@ export function SceneCard({
               </div>
             </div>
           ) : (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {scene.visual_prompt}
+            <div className="space-y-1">
+              <VisualPrompt prompt={scene.visual_prompt} />
               {scene.visual_is_custom && (
-                <span className="ml-1 text-foreground">(edited by you)</span>
+                <p className="text-xs text-foreground">(edited by you)</p>
               )}
-            </p>
+            </div>
           )}
         </div>
 

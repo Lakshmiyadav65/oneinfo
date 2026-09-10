@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
+import { getStoryboard } from "@/lib/api/storyboard";
 import {
   startGeneration,
   getGenerationStatus,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/api/generation";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { GenerationProgress } from "@/components/create/GenerationProgress";
+import { ClipGrid } from "@/components/create/ClipGrid";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -55,6 +57,9 @@ function formatSize(bytes: number | null): string | null {
 export function GenerateView({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const project = useAsyncData(() => getProject(projectId), [projectId]);
+  // The clips being generated. Fetched once: the storyboard is fixed for the
+  // duration of a run, so re-reading it on every poll would be pure traffic.
+  const storyboard = useAsyncData(() => getStoryboard(projectId), [projectId]);
   const [job, setJob] = useState<GenerationJob | null | undefined>(undefined);
   const [isStarting, setIsStarting] = useState(false);
   const [output, setOutput] = useState<VideoOutput | null>(null);
@@ -188,6 +193,14 @@ export function GenerateView({ projectId }: { projectId: string }) {
         <Card>
           <CardContent className="space-y-5 p-6">
             <GenerationProgress job={job} />
+
+            {storyboard.status === "success" && storyboard.data && (
+              <ClipGrid
+                projectId={projectId}
+                scenes={storyboard.data.scenes}
+                job={job}
+              />
+            )}
 
             {job.status === "failed" && (
               <div className="space-y-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
