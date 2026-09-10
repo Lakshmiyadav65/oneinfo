@@ -103,13 +103,17 @@ export function EnvironmentSetup({
    * which is the pattern React asks you not to write. `key` is the sanctioned
    * way to reset an uncontrolled field, and it only changes on a real edit -
    * by which point focus has already left.
+   *
+   * That key is written on each field rather than returned from here. React
+   * reads it off the JSX element itself, and one arriving inside a spread is
+   * dropped with a warning - which left these fields never resetting at all
+   * when a preset or a saved setup replaced the value underneath them.
    */
-  function textField(key: "custom_setup" | "custom_background" | "additional_requirements") {
+  function textField(field: "custom_setup" | "custom_background" | "additional_requirements") {
     return {
-      key: environment[key],
-      defaultValue: environment[key],
+      defaultValue: environment[field],
       onBlur: (event: React.FocusEvent<HTMLTextAreaElement>) => {
-        if (event.target.value !== environment[key]) set(key, event.target.value);
+        if (event.target.value !== environment[field]) set(field, event.target.value);
       },
     };
   }
@@ -180,6 +184,7 @@ export function EnvironmentSetup({
         <div className="space-y-1.5">
           <Label htmlFor={`${idPrefix}-custom-setup`}>Describe your setup</Label>
           <Textarea
+            key={environment.custom_setup}
             id={`${idPrefix}-custom-setup`}
             rows={2}
             disabled={disabled}
@@ -270,11 +275,12 @@ export function EnvironmentSetup({
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor={`${idPrefix}-custom-background`}>Describe background</Label>
                 <Textarea
+                  key={environment.custom_background}
                   id={`${idPrefix}-custom-background`}
                   rows={2}
                   disabled={disabled}
                   placeholder="A large glass wall with the city lit up behind it"
-            {...textField("custom_background")}
+                  {...textField("custom_background")}
                 />
               </div>
             )}
@@ -282,11 +288,12 @@ export function EnvironmentSetup({
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor={`${idPrefix}-extra`}>Additional visual requirements</Label>
               <Textarea
+                key={environment.additional_requirements}
                 id={`${idPrefix}-extra`}
                 rows={2}
                 disabled={disabled}
                 placeholder="Anything specific you want included? e.g. keep a laptop on the desk and a small plant in the background."
-            {...textField("additional_requirements")}
+                {...textField("additional_requirements")}
               />
             </div>
           </div>
