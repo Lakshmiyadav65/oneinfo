@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.generation_job import GenerationJob
 from app.providers.storage import get_storage_provider
+from app.schemas.export import ExportRequest
 from app.schemas.generation import (
     GenerationJobOut,
     SceneTakesOut,
@@ -139,6 +140,33 @@ async def start_stitch(
     re-billed every scene, including the ones already paid for one at a time.
     """
     job, is_new = await generation_service.start_stitch(db, creator.id, project_id)
+    if is_new:
+        background_tasks.add_task(generation_service.run_generation_job, job.id)
+    return job
+
+
+@router.post("/export", response_model=GenerationJobOut)
+async def export_video(
+    project_id: uuid.UUID,
+    request: ExportRequest,
+    background_tasks: BackgroundTasks,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> GenerationJob:
+    """
+    The finished video again, framed for wherever it is going next.
+
+    The same free stitch as combining, so exporting the same cut for three
+    platforms costs nothing: the clips have already been paid for and no
+    request reaches the video provider.
+
+    The frame is recorded against this run and not against the project. A
+    creator exporting for YouTube is saying where this file is going, not
+    changing what their next scene is generated as.
+    """
+    job, is_new = await generation_service.start_stitch(
+        db, creator.id, project_id, export=request
+    )
     if is_new:
         background_tasks.add_task(generation_service.run_generation_job, job.id)
     return job

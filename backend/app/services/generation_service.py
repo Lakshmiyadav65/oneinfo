@@ -24,9 +24,14 @@ from app.providers.video.base import (
     VideoProvider,
     snap_duration,
 )
-from app.schemas.output_settings import ModelTier
+from app.schemas.export import ExportFormat, ExportRequest
+from app.schemas.output_settings import ModelTier, Resolution
 from app.services import creator_face_service, project_service
-from app.services.project_service import output_size, project_output_settings
+from app.services.project_service import (
+    export_size,
+    output_size,
+    project_output_settings,
+)
 from app.services.rendering_service import render_final_video
 
 
@@ -233,7 +238,10 @@ async def get_stitch_readiness(
 
 
 async def start_stitch(
-    db: AsyncSession, creator_id: str, project_id: uuid.UUID
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    export: ExportRequest | None = None,
 ) -> tuple[GenerationJob, bool]:
     """
     Makes the finished video out of the clips already generated.
@@ -243,6 +251,11 @@ async def start_stitch(
     paid clips and no way to combine them, because the only route to a
     finished video was a full run that regenerated and re-billed every one
     of them.
+
+    `export` re-frames that same free run for somewhere it is going - a
+    vertical cut for Reels, a landscape one for YouTube - and is recorded
+    against the run rather than against the project. Exporting for one
+    platform must not decide what the next scene is generated as.
     """
     project = await project_service.get_owned_project(db, creator_id, project_id)
 
@@ -271,6 +284,8 @@ async def start_stitch(
         creator_id=creator_id,
         stitch_only=True,
         status=JobStatus.queued,
+        export_aspect_ratio=export.format.value if export else None,
+        export_resolution=export.resolution.value if export else None,
     )
     db.add(job)
     project.status = ProjectStatus.generating
@@ -457,6 +472,23 @@ async def _discard_previous_takes(
     await db.flush()
 
 
+def _render_size(job: GenerationJob, output) -> tuple[int, int]:
+    """
+    The frame this run is rendered at.
+
+    An export names its own; everything else uses the shape the project
+    generates at, which is what stitching has always done. Clips are fitted
+    and padded into it rather than stretched, so exporting a vertical cut as
+    landscape gets bars down the sides and not a squashed face.
+    """
+    if job.export_aspect_ratio is None:
+        return output_size(output)
+    return export_size(
+        ExportFormat(job.export_aspect_ratio),
+        Resolution(job.export_resolution or Resolution.full_hd.value),
+    )
+
+
 async def _finish_video(
     db: AsyncSession,
     settings: Settings,
@@ -478,7 +510,7 @@ async def _finish_video(
     await db.commit()
 
     final_path, duration = await render_final_video(
-        settings, render_inputs, size=output_size(output)
+        settings, render_inputs, size=_render_size(job, output)
     )
     temp_files.append(final_path)
 

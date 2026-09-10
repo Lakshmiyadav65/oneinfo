@@ -1,8 +1,27 @@
 import { api, ApiError } from "@/lib/api/client";
-import type { GenerationJob, VideoOutput } from "@/types/generation";
+import type { ExportFormat, GenerationJob, VideoOutput } from "@/types/generation";
+import type { Resolution } from "@/types/output-settings";
 
 export async function startGeneration(projectId: string): Promise<GenerationJob> {
   return api.post<GenerationJob>(`/projects/${projectId}/generate`);
+}
+
+/**
+ * The finished video again, framed for wherever it is going next.
+ *
+ * The same free stitch as combining - the clips have already been paid for
+ * and nothing reaches the video provider - so exporting one cut for three
+ * platforms costs nothing.
+ */
+export async function exportVideo(
+  projectId: string,
+  format: ExportFormat,
+  resolution: Resolution
+): Promise<GenerationJob> {
+  return api.post<GenerationJob>(`/projects/${projectId}/export`, {
+    format,
+    resolution,
+  });
 }
 
 export async function getGenerationStatus(projectId: string): Promise<GenerationJob | null> {

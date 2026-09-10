@@ -33,7 +33,16 @@ function phasesFor(job: GenerationJob): { key: PhaseKey; label: string }[] {
     { key: "scenes", label: scenes },
     ...(job.scene_id
       ? []
-      : [{ key: "render" as const, label: "Stitching and captioning" }]),
+      : [
+          {
+            key: "render" as const,
+            // An export is stitching too, but naming the frame is what tells
+            // the creator this run is the one they asked for.
+            label: job.export_aspect_ratio
+              ? `Exporting at ${job.export_aspect_ratio}`
+              : "Stitching and captioning",
+          },
+        ]),
     { key: "done", label: "Finished" },
   ];
 }
@@ -81,6 +90,7 @@ const STARTING: GenerationJob = {
   scenes_total: null,
   scenes_completed: null,
   stitch_only: false,
+  export_aspect_ratio: null,
   error_message: null,
   error_detail: null,
   created_at: "",

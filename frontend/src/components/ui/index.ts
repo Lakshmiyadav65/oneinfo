@@ -7,6 +7,7 @@ export * from "@/components/ui/Badge";
 export * from "@/components/ui/Spinner";
 export * from "@/components/ui/Skeleton";
 export * from "@/components/ui/Progress";
+export * from "@/components/ui/Segmented";
 export * from "@/components/ui/EmptyState";
 export * from "@/components/ui/ErrorState";
 export * from "@/components/ui/Dialog";

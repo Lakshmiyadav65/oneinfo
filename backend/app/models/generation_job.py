@@ -41,6 +41,12 @@ class GenerationJob(Base):
     # that regenerated and re-billed every scene, including the ones the
     # creator had already paid to generate one at a time.
     stitch_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # The shape and size this run was asked to export at, or null for "the
+    # shape this project generates at", which is what every ordinary run
+    # uses. Held per run rather than on the project: exporting for YouTube
+    # must not quietly decide what the next scene is generated as.
+    export_aspect_ratio: Mapped[str | None] = mapped_column(String, nullable=True)
+    export_resolution: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[JobStatus] = mapped_column(String, nullable=False, default=JobStatus.queued, index=True)
     current_stage: Mapped[str | None] = mapped_column(String, nullable=True)
     # current_stage in numbers, so the UI can draw progress instead of an

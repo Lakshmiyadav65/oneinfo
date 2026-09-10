@@ -3,10 +3,10 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import Settings
 from app.core.errors import NotFoundError
 from app.models.project import Project, ProjectStatus
-from app.schemas.output_settings import AspectRatio, OutputSettings, Resolution
+from app.schemas.export import ExportFormat
+from app.schemas.output_settings import OutputSettings, Resolution
 from app.services import environment_setup_service
 
 
@@ -115,11 +115,25 @@ def output_size(output: OutputSettings) -> tuple[int, int]:
     landscape pair, and a vertical project stitched at them pillarboxes every
     scene - after all of them have been paid for.
     """
-    short_edge = 720 if output.resolution is Resolution.hd else 1080
+    return export_size(ExportFormat(output.aspect_ratio.value), output.resolution)
+
+
+def export_size(fmt: ExportFormat, resolution: Resolution) -> tuple[int, int]:
+    """
+    The pixel size a finished video is exported at.
+
+    Takes the frame as an argument rather than reading the project, because
+    an export is ffmpeg alone over clips that already exist. It can hand back
+    a square, which Veo will not generate and which therefore has no business
+    in the generation settings.
+    """
+    short_edge = 720 if resolution is Resolution.hd else 1080
+    if fmt is ExportFormat.square:
+        return short_edge, short_edge
     long_edge = round(short_edge * 16 / 9)
     # Kept even: libx264 with yuv420p rejects an odd dimension outright.
     long_edge += long_edge % 2
-    if output.aspect_ratio is AspectRatio.vertical:
+    if fmt is ExportFormat.vertical:
         return short_edge, long_edge
     return long_edge, short_edge
 

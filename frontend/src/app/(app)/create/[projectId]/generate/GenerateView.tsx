@@ -17,6 +17,7 @@ import { GenerationProgress } from "@/components/create/GenerationProgress";
 import { ClipGrid } from "@/components/create/ClipGrid";
 import { GenerateDialog } from "@/components/create/GenerateDialog";
 import { CombineClips } from "@/components/create/CombineClips";
+import { ExportVideo } from "@/components/create/ExportVideo";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -224,6 +225,27 @@ export function GenerateView({ projectId }: { projectId: string }) {
             // Same reset as starting a paid run: the previous finished
             // video is about to be replaced, so it must stop being shown
             // as though it were this run's result.
+            setVideoError(null);
+            setVideoUrl(null);
+            setOutput(null);
+            setJob(started);
+          }}
+        />
+      )}
+
+      {/*
+        Under combining, and for the same reason it is free: both build the
+        finished video out of clips already paid for. Combining makes it at
+        the shape the project generates in; exporting says where the file is
+        going and frames it for that.
+      */}
+      {job?.status !== "processing" && job?.status !== "queued" && (
+        <ExportVideo
+          projectId={projectId}
+          generatedAs={project.data.output_settings.aspect_ratio}
+          disabled={isStarting}
+          refreshToken={cutVersion}
+          onStarted={(started) => {
             setVideoError(null);
             setVideoUrl(null);
             setOutput(null);

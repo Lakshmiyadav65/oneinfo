@@ -19,6 +19,9 @@ class GenerationJobOut(BaseModel):
     scenes_completed: int | None
     # True for a free run that only combined clips already on hand.
     stitch_only: bool = False
+    # Set when the run was an export, so the UI can name the frame it is
+    # producing rather than calling every free run "combining".
+    export_aspect_ratio: str | None = None
     error_message: str | None
     error_detail: str | None
     created_at: datetime
