@@ -4,18 +4,20 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.agents.environment_prompt import compose_visual_prompt
 from app.agents.qa_agent import run_qa_agent
 from app.agents.storyboard_agent import run_storyboard_agent
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationAppError
 from app.models.creator import Creator
-from app.models.project import ProjectStatus
+from app.models.project import Project, ProjectStatus
 from app.models.script import ContentStatus
 from app.models.storyboard import Storyboard, StoryboardScene
 from app.providers.llm import get_llm_provider
 from app.providers.video import get_supported_durations
 from app.providers.video.base import snap_duration
 from app.schemas.agents import StoryboardOutput
+from app.schemas.environment import SceneEnvironment, environment_for_preset
 from app.services import (
     creator_face_service,
     project_service,
@@ -25,6 +27,62 @@ from app.services import (
 
 # Matches the ceiling the storyboard prompt asks the model to respect.
 MAX_ON_CAMERA_SCENES = 2
+
+
+def scene_environment(scene: StoryboardScene) -> SceneEnvironment:
+    """
+    A scene's setup, defaulted rather than nullable.
+
+    Scenes written before setups existed have nothing stored. Handing every
+    caller a null to think about would spread that history through the whole
+    codebase; they get the default instead.
+    """
+    if not scene.environment:
+        return SceneEnvironment()
+    return SceneEnvironment.model_validate(scene.environment)
+
+
+def project_environment(project: Project) -> SceneEnvironment:
+    """The setup new scenes start from."""
+    if not project.default_environment:
+        return SceneEnvironment()
+    return SceneEnvironment.model_validate(project.default_environment)
+
+
+def _resolved(environment: SceneEnvironment, reset_to_preset: bool) -> SceneEnvironment:
+    """
+    The setup to store.
+
+    Picking a preset chip means "give me that whole look", so the controls
+    behind it are rebuilt from the preset's own defaults. The creator's free
+    text is theirs and survives either way.
+    """
+    if not reset_to_preset:
+        return environment
+    rebuilt = environment_for_preset(environment.preset)
+    rebuilt.custom_setup = environment.custom_setup
+    rebuilt.custom_background = environment.custom_background
+    rebuilt.additional_requirements = environment.additional_requirements
+    return rebuilt
+
+
+async def _rebuild_visual(
+    db: AsyncSession, creator_id: str, scene: StoryboardScene
+) -> None:
+    """
+    Recomposes the visual prompt from the scene's setup.
+
+    Never touches a scene whose visual the creator wrote themselves - that
+    check belongs to the caller, which knows whether the creator was asked.
+    """
+    creator = await db.get(Creator, creator_id)
+    scene.visual_prompt = compose_visual_prompt(
+        scene_environment(scene),
+        action=scene.visual_action or "",
+        features_creator=scene.features_creator,
+        appearance_description=creator.appearance_description if creator else None,
+        voice_description=creator.voice_description if creator else None,
+    )
 
 
 def _normalize_scenes(
@@ -129,6 +187,10 @@ async def generate_storyboard(
     storyboard.qa_passed = qa_result.passed
     storyboard.qa_issues = qa_result.issues
 
+    # New scenes inherit the project's default setup, so a creator picks a
+    # look once instead of once per scene. The agent's visual line is kept as
+    # the action and the prompt is composed around it.
+    default_environment = project_environment(project)
     for scene in output.scenes:
         db.add(
             StoryboardScene(
@@ -137,7 +199,15 @@ async def generate_storyboard(
                 order=scene.order,
                 duration_seconds=scene.duration_seconds,
                 voiceover=scene.voiceover,
-                visual_prompt=scene.visual_prompt,
+                visual_action=scene.visual_prompt,
+                visual_prompt=compose_visual_prompt(
+                    default_environment,
+                    action=scene.visual_prompt,
+                    features_creator=scene.features_creator,
+                    appearance_description=creator.appearance_description if creator else None,
+                    voice_description=creator.voice_description if creator else None,
+                ),
+                environment=default_environment.model_dump(mode="json"),
                 caption=scene.caption,
                 features_creator=scene.features_creator,
             )
@@ -209,5 +279,108 @@ async def set_scene_on_camera(
         scene.duration_seconds,
         get_supported_durations(settings, with_reference=features_creator),
     )
+    # The creator's appearance is written into the prompt of an on-camera
+    # scene. Toggling without rebuilding left that description in a scene no
+    # longer flagged on camera, so the model drew a lookalike from the words
+    # while the reference photo went unused.
+    if not scene.visual_is_custom:
+        await _rebuild_visual(db, creator_id, scene)
     await db.commit()
     return await get_storyboard(db, creator_id, project_id)
+
+
+async def set_scene_environment(
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    environment: SceneEnvironment,
+    *,
+    rebuild_visual: bool,
+    reset_to_preset: bool = False,
+) -> Storyboard:
+    """
+    Replaces one scene's filming setup.
+
+    A scene whose visual the creator wrote by hand keeps that wording unless
+    `rebuild_visual` says otherwise - the UI asks before setting it, so the
+    choice is always the creator's rather than ours.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    storyboard = await get_storyboard(db, creator_id, project_id)
+
+    scene = next((s for s in storyboard.scenes if s.id == scene_id), None)
+    if scene is None:
+        raise NotFoundError("No such scene in this storyboard.")
+
+    scene.environment = _resolved(environment, reset_to_preset).model_dump(mode="json")
+    if rebuild_visual or not scene.visual_is_custom:
+        await _rebuild_visual(db, creator_id, scene)
+        scene.visual_is_custom = False
+    await db.commit()
+    return await get_storyboard(db, creator_id, project_id)
+
+
+async def set_scene_visual(
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    visual_prompt: str,
+) -> Storyboard:
+    """
+    The creator's own words for what the shot looks like.
+
+    Marks the scene custom, which is what stops a later change of setup from
+    rebuilding over it without asking.
+    """
+    if not visual_prompt.strip():
+        raise ValidationAppError("A scene needs a visual description.")
+
+    await project_service.get_owned_project(db, creator_id, project_id)
+    storyboard = await get_storyboard(db, creator_id, project_id)
+
+    scene = next((s for s in storyboard.scenes if s.id == scene_id), None)
+    if scene is None:
+        raise NotFoundError("No such scene in this storyboard.")
+
+    scene.visual_prompt = visual_prompt.strip()
+    scene.visual_is_custom = True
+    await db.commit()
+    return await get_storyboard(db, creator_id, project_id)
+
+
+async def set_project_environment(
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    environment: SceneEnvironment,
+    *,
+    apply_to_all: bool,
+    reset_to_preset: bool = False,
+) -> Project:
+    """
+    The setup new scenes inherit, and optionally every existing scene too.
+
+    `apply_to_all` still spares a scene whose visual the creator wrote: the
+    setup moves, the words do not. Anything else would make one click destroy
+    work across a whole storyboard.
+    """
+    project = await project_service.get_owned_project(db, creator_id, project_id)
+    project.default_environment = _resolved(environment, reset_to_preset).model_dump(mode="json")
+
+    if apply_to_all:
+        result = await db.execute(
+            select(Storyboard)
+            .where(Storyboard.project_id == project_id)
+            .options(selectinload(Storyboard.scenes))
+        )
+        storyboard = result.scalar_one_or_none()
+        for scene in storyboard.scenes if storyboard else []:
+            scene.environment = project.default_environment
+            if not scene.visual_is_custom:
+                await _rebuild_visual(db, creator_id, scene)
+
+    await db.commit()
+    await db.refresh(project)
+    return project

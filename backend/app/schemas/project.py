@@ -2,9 +2,10 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.project import ProjectStatus
+from app.schemas.environment import SceneEnvironment
 
 
 class ProjectCreateIn(BaseModel):
@@ -26,6 +27,15 @@ class ProjectOut(BaseModel):
     language: str
     status: ProjectStatus
     selected_hook_id: uuid.UUID | None = None
+    # The filming setup new scenes inherit. Defaulted rather than nullable,
+    # so the UI never has to render an absent setup.
+    default_environment: SceneEnvironment = SceneEnvironment()
+
+    @field_validator("default_environment", mode="before")
+    @classmethod
+    def _default_environment(cls, value: object) -> object:
+        # Null on projects created before setups existed.
+        return value or {}
     created_at: datetime
     updated_at: datetime
 

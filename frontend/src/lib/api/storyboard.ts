@@ -1,5 +1,6 @@
 import { api, ApiError } from "@/lib/api/client";
 import type { Storyboard } from "@/types/storyboard";
+import type { SceneEnvironment } from "@/types/environment";
 
 export async function getStoryboard(projectId: string): Promise<Storyboard | null> {
   try {
@@ -23,5 +24,43 @@ export async function setSceneOnCamera(
   return api.patch<Storyboard>(
     `/projects/${projectId}/storyboard/scenes/${sceneId}`,
     { features_creator: featuresCreator }
+  );
+}
+
+/**
+ * Replaces one scene's filming setup.
+ *
+ * `resetToPreset` says the creator clicked a preset chip rather than nudging
+ * one control, so the server rebuilds the rest from that preset's defaults —
+ * which is why "what YouTube Studio means" is not duplicated here.
+ *
+ * `rebuildVisual` decides what happens to a visual description the creator
+ * wrote themselves. False keeps their words.
+ */
+export async function setSceneEnvironment(
+  projectId: string,
+  sceneId: string,
+  environment: SceneEnvironment,
+  options: { resetToPreset?: boolean; rebuildVisual?: boolean } = {}
+): Promise<Storyboard> {
+  return api.patch<Storyboard>(
+    `/projects/${projectId}/storyboard/scenes/${sceneId}/environment`,
+    {
+      environment,
+      reset_to_preset: options.resetToPreset ?? false,
+      rebuild_visual: options.rebuildVisual ?? true,
+    }
+  );
+}
+
+/** The creator's own wording for the shot. Nothing rebuilds over it after. */
+export async function setSceneVisual(
+  projectId: string,
+  sceneId: string,
+  visualPrompt: string
+): Promise<Storyboard> {
+  return api.patch<Storyboard>(
+    `/projects/${projectId}/storyboard/scenes/${sceneId}/visual`,
+    { visual_prompt: visualPrompt }
   );
 }

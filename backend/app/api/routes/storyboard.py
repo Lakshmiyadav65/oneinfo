@@ -8,7 +8,13 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.storyboard import Storyboard
-from app.schemas.storyboard import SceneOnCameraIn, StoryboardOut
+from app.schemas.storyboard import (
+    ProjectEnvironmentIn,
+    SceneEnvironmentIn,
+    SceneOnCameraIn,
+    SceneVisualIn,
+    StoryboardOut,
+)
 from app.services import storyboard_service
 
 router = APIRouter(prefix="/projects/{project_id}/storyboard", tags=["storyboard"])
@@ -44,4 +50,39 @@ async def set_scene_on_camera(
 ) -> Storyboard:
     return await storyboard_service.set_scene_on_camera(
         db, settings, creator.id, project_id, scene_id, payload.features_creator
+    )
+
+
+@router.patch("/scenes/{scene_id}/environment", response_model=StoryboardOut)
+async def set_scene_environment(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    payload: SceneEnvironmentIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> Storyboard:
+    """How this one scene is filmed. Rebuilds its visual description unless
+    the creator wrote that themselves and asked to keep it."""
+    return await storyboard_service.set_scene_environment(
+        db,
+        creator.id,
+        project_id,
+        scene_id,
+        payload.environment,
+        rebuild_visual=payload.rebuild_visual,
+        reset_to_preset=payload.reset_to_preset,
+    )
+
+
+@router.patch("/scenes/{scene_id}/visual", response_model=StoryboardOut)
+async def set_scene_visual(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    payload: SceneVisualIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> Storyboard:
+    """The creator's own wording for the shot, which nothing rebuilds over."""
+    return await storyboard_service.set_scene_visual(
+        db, creator.id, project_id, scene_id, payload.visual_prompt
     )

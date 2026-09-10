@@ -4,59 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
-import {
-  getStoryboard,
-  generateStoryboard,
-  setSceneOnCamera,
-} from "@/lib/api/storyboard";
+import { getStoryboard, generateStoryboard } from "@/lib/api/storyboard";
+import { setProjectEnvironment } from "@/lib/api/projects";
 import { getFaceSetup } from "@/lib/api/creator-face";
 import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
-import { ScenePreview } from "@/components/create/ScenePreview";
+import { EnvironmentSetup } from "@/components/create/EnvironmentSetup";
+import { SceneCard } from "@/components/create/SceneCard";
+import { storyboardCost } from "@/lib/workflow/scene-cost";
+import type { EnvironmentPreset, SceneEnvironment } from "@/types/environment";
 import type { Storyboard } from "@/types/storyboard";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Spinner } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
-import { cn } from "@/lib/utils/cn";
-
-// Veo bills per second, and an on-camera scene runs on a pricier model
-// than b-roll. Surfaced per scene because the toggle below is the main
-// thing driving what a video costs, and that shouldn't be invisible.
-const B_ROLL_RUPEES_PER_SECOND = 4.78;
-const ON_CAMERA_RUPEES_PER_SECOND = 14.33;
-
-function sceneCost(durationSeconds: number, onCamera: boolean): string {
-  const rate = onCamera ? ON_CAMERA_RUPEES_PER_SECOND : B_ROLL_RUPEES_PER_SECOND;
-  return `₹${Math.round(durationSeconds * rate)}`;
-}
-
-// Veo only renders 8-second clips when the creator is in frame, so turning a
-// scene on-camera also stretches it to 8s. The surcharge has to price that,
-// not just the rate difference on the current length.
-const ON_CAMERA_SECONDS = 8;
-
-function onCameraSurcharge(durationSeconds: number): string {
-  const extra =
-    ON_CAMERA_SECONDS * ON_CAMERA_RUPEES_PER_SECOND -
-    durationSeconds * B_ROLL_RUPEES_PER_SECOND;
-  return `₹${Math.round(extra)}`;
-}
-
-function storyboardCost(storyboard: Storyboard): string {
-  const total = storyboard.scenes.reduce(
-    (sum, scene) =>
-      sum +
-      scene.duration_seconds *
-        (scene.features_creator ? ON_CAMERA_RUPEES_PER_SECOND : B_ROLL_RUPEES_PER_SECOND),
-    0
-  );
-  return `₹${Math.round(total)}`;
-}
 
 function errorDescription(err: unknown): string | undefined {
   return err instanceof Error ? err.message : undefined;
@@ -70,7 +34,6 @@ export function StoryboardView({ projectId }: { projectId: string }) {
   const faceQuery = useAsyncData(() => getFaceSetup(), []);
   const [isGenerating, setIsGenerating] = useState(false);
   const [override, setOverride] = useState<Storyboard | null>(null);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [autoFailed, setAutoFailed] = useState<string | null>(null);
   // Same guard as the script step: set synchronously so a re-render cannot
   // schedule a second call, and surviving StrictMode's double effect.
@@ -116,6 +79,49 @@ export function StoryboardView({ projectId }: { projectId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsStoryboard, projectId]);
 
+  // The project's default setup, and what to do about scenes that already
+  // exist. Held pending until the creator answers, because applying to all
+  // is the one action here that can reach across a whole storyboard.
+  const [pendingDefault, setPendingDefault] = useState<{
+    environment: SceneEnvironment;
+    resetToPreset: boolean;
+  } | null>(null);
+  const [savingDefault, setSavingDefault] = useState(false);
+
+  async function saveDefault(
+    environment: SceneEnvironment,
+    resetToPreset: boolean,
+    applyToAll: boolean
+  ) {
+    setSavingDefault(true);
+    try {
+      await setProjectEnvironment(projectId, environment, { applyToAll, resetToPreset });
+      project.retry();
+      if (applyToAll) {
+        setOverride(null);
+        storyboardQuery.retry();
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't save the default setup",
+        description: errorDescription(err),
+      });
+    } finally {
+      setSavingDefault(false);
+      setPendingDefault(null);
+    }
+  }
+
+  function requestDefault(environment: SceneEnvironment, resetToPreset: boolean) {
+    // With no scenes yet there is nothing to overwrite, so no question to ask.
+    if (!storyboard || storyboard.scenes.length === 0) {
+      void saveDefault(environment, resetToPreset, false);
+      return;
+    }
+    setPendingDefault({ environment, resetToPreset });
+  }
+
   function retryGeneration() {
     startedFor.current = null;
     setAutoFailed(null);
@@ -158,24 +164,13 @@ export function StoryboardView({ projectId }: { projectId: string }) {
     }
   }
 
-  async function handleToggleOnCamera(sceneId: string, next: boolean) {
-    setTogglingId(sceneId);
-    try {
-      setOverride(await setSceneOnCamera(projectId, sceneId, next));
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: next ? "Can't put you on camera" : "Couldn't update the scene",
-        description: errorDescription(err),
-      });
-    } finally {
-      setTogglingId(null);
-    }
-  }
+  // Captured once: inside the callbacks below, TypeScript can no longer see
+  // the null check above.
+  const projectData = project.data;
 
   return (
     <div className="space-y-6">
-      <WorkflowHeader project={project.data} activeStep="storyboard" />
+      <WorkflowHeader project={projectData} activeStep="storyboard" />
 
       {storyboardQuery.status === "loading" && (
         <div className="space-y-2">
@@ -243,81 +238,82 @@ export function StoryboardView({ projectId }: { projectId: string }) {
 
           <CreatorFacePrompt onChange={() => faceQuery.retry()} />
 
-          <div className="space-y-2">
-            {storyboard.scenes.map((scene) => (
-              <Card key={scene.id}>
-                <CardContent className="space-y-2 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-foreground">
-                        Scene {scene.order}
-                      </p>
-                      {scene.features_creator && <Badge variant="info">You</Badge>}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {scene.duration_seconds}s &middot;{" "}
-                      {sceneCost(scene.duration_seconds, scene.features_creator)}
-                    </p>
-                  </div>
-                  {/*
-                    The spoken line leads the card. It is the one thing on a
-                    scene the creator is really judging - what the person on
-                    screen actually says - so it is set as speech rather than
-                    left level with the prompt text describing the picture.
-                  */}
-                  <div className="space-y-1">
-                    <span className="inline-flex rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-primary">
-                      Dialogue
-                    </span>
-                    <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm leading-relaxed text-foreground">
-                      {scene.voiceover}
-                    </p>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Visual: {scene.visual_prompt}
+          {/*
+            The project default, so a creator picks a look once rather than
+            once per scene. New scenes inherit it; any scene can still
+            override it below.
+          */}
+          <Card>
+            <CardContent className="space-y-3 p-4">
+              <EnvironmentSetup
+                idPrefix="project-default"
+                environment={projectData.default_environment}
+                disabled={savingDefault}
+                onPresetChange={(preset: EnvironmentPreset) =>
+                  requestDefault(
+                    { ...projectData.default_environment, preset },
+                    true
+                  )
+                }
+                onChange={(environment) => requestDefault(environment, false)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Default for new scenes. Each scene can override it.
+              </p>
+
+              {pendingDefault && (
+                <div
+                  role="alert"
+                  className="space-y-2 rounded-md border border-border bg-muted/40 p-3"
+                >
+                  <p className="text-sm text-foreground">
+                    Apply this setup to all {storyboard.scenes.length} existing
+                    scenes? Scenes whose visual description you edited keep
+                    their wording either way.
                   </p>
-                  {/*
-                    The costliest decision on the page, so it is given the
-                    weight of one. As a muted checkbox it read like a footnote
-                    while being the difference between a b-roll scene and one
-                    charged at three times the rate.
-                  */}
-                  <label
-                    className={cn(
-                      "flex cursor-pointer flex-wrap items-center gap-2 rounded-md border p-3 text-sm transition-colors",
-                      scene.features_creator
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border text-foreground hover:border-ring hover:bg-muted/50",
-                      !canGoOnCamera && "cursor-not-allowed opacity-60"
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      className="size-4 shrink-0 accent-[var(--primary)]"
-                      checked={scene.features_creator}
-                      disabled={togglingId === scene.id || !canGoOnCamera}
-                      onChange={(event) =>
-                        void handleToggleOnCamera(scene.id, event.target.checked)
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      isLoading={savingDefault}
+                      onClick={() =>
+                        void saveDefault(
+                          pendingDefault.environment,
+                          pendingDefault.resetToPreset,
+                          true
+                        )
                       }
-                    />
-                    <span className="font-medium">
-                      {canGoOnCamera
-                        ? "Put me on camera in this scene"
-                        : "Put me on camera (add a photo first)"}
-                    </span>
-                    {canGoOnCamera && !scene.features_creator && (
-                      <span className="text-xs text-muted-foreground">
-                        becomes 8s &middot; +{onCameraSurcharge(scene.duration_seconds)}
-                      </span>
-                    )}
-                  </label>
-                  <ScenePreview
-                    projectId={projectId}
-                    sceneId={scene.id}
-                    cost={sceneCost(scene.duration_seconds, scene.features_creator)}
-                  />
-                </CardContent>
-              </Card>
+                    >
+                      Apply to all
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={savingDefault}
+                      onClick={() =>
+                        void saveDefault(
+                          pendingDefault.environment,
+                          pendingDefault.resetToPreset,
+                          false
+                        )
+                      }
+                    >
+                      Only new scenes
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="space-y-3">
+            {storyboard.scenes.map((scene) => (
+              <SceneCard
+                key={scene.id}
+                projectId={projectId}
+                scene={scene}
+                canGoOnCamera={canGoOnCamera}
+                onUpdated={setOverride}
+              />
             ))}
           </div>
 

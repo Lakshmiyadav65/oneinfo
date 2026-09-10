@@ -50,6 +50,16 @@ class StoryboardScene(Base):
     voiceover: Mapped[str] = mapped_column(Text, nullable=False)
     visual_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     caption: Mapped[str] = mapped_column(Text, nullable=False)
+    # What the storyboard agent said happens in the shot, kept apart from the
+    # composed visual_prompt so a change of setup can rebuild the prompt
+    # without losing the part that is tied to the script.
+    visual_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # True once the creator has edited the visual description themselves.
+    # Nothing rebuilds over it after that without asking first.
+    visual_is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # The filming setup, as structured values. See schemas/environment.py.
+    # Null on scenes written before setups existed; read as the default.
+    environment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Whether the creator is on camera in this scene. Drives both look and
     # cost: only these scenes attach face references, and only these pay the
     # reference model's rate (3-8x the Lite tier). B-roll stays cheap.

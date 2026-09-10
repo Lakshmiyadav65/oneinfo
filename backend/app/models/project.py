@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,9 @@ class Project(Base):
     # the later Language step: a creator whose audience is Telugu cannot
     # judge an English hook without translating it first.
     language: Mapped[str] = mapped_column(String, nullable=False, default="english")
+    # The filming setup new scenes start from, so a creator chooses it once
+    # rather than once per scene. Null means the built-in default.
+    default_environment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # True when nobody typed a title, so the research agent's topic may
     # replace the truncated idea standing in for one.
     title_is_auto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

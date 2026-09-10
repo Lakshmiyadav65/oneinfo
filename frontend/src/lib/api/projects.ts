@@ -1,3 +1,4 @@
+import type { SceneEnvironment } from "@/types/environment";
 import { api, ApiError, ApiNotConfiguredError } from "@/lib/api/client";
 import type { IdeaSuggestions, Project, ProjectLanguage } from "@/types/project";
 
@@ -44,4 +45,20 @@ export function updateProjectLanguage(
   language: ProjectLanguage
 ): Promise<Project> {
   return api.patch<Project>(`/projects/${projectId}`, { language });
+}
+
+/**
+ * The setup new scenes inherit. `applyToAll` also rewrites existing scenes,
+ * leaving alone any whose visual description the creator wrote by hand.
+ */
+export async function setProjectEnvironment(
+  projectId: string,
+  environment: SceneEnvironment,
+  options: { applyToAll?: boolean; resetToPreset?: boolean } = {}
+): Promise<Project> {
+  return api.patch<Project>(`/projects/${projectId}/environment`, {
+    environment,
+    apply_to_all: options.applyToAll ?? false,
+    reset_to_preset: options.resetToPreset ?? false,
+  });
 }

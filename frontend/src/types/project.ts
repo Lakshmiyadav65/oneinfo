@@ -1,3 +1,5 @@
+import type { SceneEnvironment } from "@/types/environment";
+
 export type ProjectStatus =
   | "draft"
   | "hooks"
@@ -25,6 +27,8 @@ export type Project = {
   language: ProjectLanguage;
   status: ProjectStatus;
   selected_hook_id: string | null;
+  /** Filming setup new scenes inherit. */
+  default_environment: SceneEnvironment;
   created_at: string;
   updated_at: string;
 };
