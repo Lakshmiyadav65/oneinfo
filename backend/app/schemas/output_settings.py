@@ -38,23 +38,11 @@ class ModelTier(str, enum.Enum):
     fast = "fast"
 
 
-# Rupees per second of generated video, by tier. Kept beside the tiers so the
-# estimate the creator reads and the model the request actually uses can
-# never come from two different places.
-#
-# These are converted list prices, not observed invoices. The GCP bill is the
-# authority; this is a forecast, and it is labelled as one on screen.
-TIER_RUPEES_PER_SECOND: dict[ModelTier, float] = {
-    ModelTier.lite: 4.78,
-    ModelTier.fast: 14.33,
-}
-
-# 1080p is billed above 720p on the full tiers. Applied as a multiplier
-# rather than a second table so a tier's price stays in one place.
-RESOLUTION_MULTIPLIER: dict[Resolution, float] = {
-    Resolution.hd: 1.0,
-    Resolution.full_hd: 2.0,
-}
+# Pricing deliberately lives in the client, in
+# frontend/src/lib/workflow/scene-cost.ts, because the estimate is only ever
+# displayed and never enforced: nothing on this side reads a rupee figure.
+# A second copy here had no callers at all and claimed in its own comment to
+# be the single source of truth, which made it worse than absent.
 
 
 class OutputSettings(BaseModel):

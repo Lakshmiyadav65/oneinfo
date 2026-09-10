@@ -18,12 +18,14 @@ from app.providers.video import get_supported_durations
 from app.providers.video.base import snap_duration
 from app.schemas.agents import StoryboardOutput
 from app.schemas.environment import SceneEnvironment, environment_for_preset
+from app.schemas.output_settings import OutputSettings
 from app.services import (
     creator_face_service,
     project_service,
     script_service,
     tanglish_service,
 )
+from app.services.project_service import output_size, project_output_settings
 
 # Matches the ceiling the storyboard prompt asks the model to respect.
 MAX_ON_CAMERA_SCENES = 2
@@ -66,6 +68,21 @@ def _resolved(environment: SceneEnvironment, reset_to_preset: bool) -> SceneEnvi
     return rebuilt
 
 
+def _aspect_label(project: Project | None) -> str:
+    """
+    The Aspect Ratio header, from the same setting that becomes the request's
+    aspectRatio parameter.
+
+    It used to come from VIDEO_WIDTH/VIDEO_HEIGHT, so once shape became a
+    per-project choice the prompt could tell Veo "16:9 Horizontal" in its
+    text while the request beside it asked for 9:16. Two instructions in one
+    call, disagreeing.
+    """
+    output = project_output_settings(project) if project else OutputSettings()
+    width, height = output_size(output)
+    return aspect_ratio_label(width, height)
+
+
 async def _rebuild_visual(
     db: AsyncSession, creator_id: str, scene: StoryboardScene
 ) -> None:
@@ -98,7 +115,7 @@ async def _rebuild_visual(
         voice_description=creator.voice_description if creator else None,
         dialogue=scene.voiceover,
         language=project.language if project else "english",
-        aspect_ratio=aspect_ratio_label(settings.video_width, settings.video_height),
+        aspect_ratio=_aspect_label(project),
         scene_number=scene.order,
         scene_count=scene_count,
     )
@@ -227,9 +244,7 @@ async def generate_storyboard(
                     voice_description=creator.voice_description if creator else None,
                     dialogue=scene.voiceover,
                     language=project.language,
-                    aspect_ratio=aspect_ratio_label(
-                        settings.video_width, settings.video_height
-                    ),
+                    aspect_ratio=_aspect_label(project),
                     scene_number=scene.order,
                     scene_count=len(output.scenes),
                 ),

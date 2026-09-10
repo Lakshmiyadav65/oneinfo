@@ -21,19 +21,25 @@ import type { AspectRatio } from "@/types/output-settings";
  * can stop the run instead of paying for four more.
  */
 
-type ClipState = "done" | "running" | "failed" | "waiting";
+type ClipState = "done" | "running" | "failed" | "waiting" | "excluded";
 
 /**
  * Derived from the job's counters rather than stored per scene. The worker
- * writes scenes_completed as it goes, so the clip at that index is the one
- * currently in flight - and, if the run died, the one it died on.
+ * writes scenes_completed as it goes, so the clip at that position is the
+ * one currently in flight - and, if the run died, the one it died on.
+ *
+ * `position` counts only the scenes actually in the run. The worker skips
+ * excluded scenes, so counting them here shifted every tile after the first
+ * excluded one: it marked the excluded scene "done" and then fetched a clip
+ * that had never been generated for it.
  */
-function stateOf(index: number, job: GenerationJob): ClipState {
+function stateOf(position: number | null, job: GenerationJob): ClipState {
+  if (position === null) return "excluded";
   const done = job.scenes_completed ?? 0;
-  if (index < done) return "done";
-  if (job.status === "failed") return index === done ? "failed" : "waiting";
+  if (position < done) return "done";
+  if (job.status === "failed") return position === done ? "failed" : "waiting";
   if (job.status === "completed") return "done";
-  if (job.status === "processing" && index === done) return "running";
+  if (job.status === "processing" && position === done) return "running";
   return "waiting";
 }
 
@@ -59,9 +65,13 @@ function ClipTile({
   const objectUrl = useRef<string | null>(null);
 
   // Fetched once the clip exists, and only then: asking for a scene that has
-  // not been generated yet is a guaranteed 404 per tile per poll.
+  // not been generated yet is a guaranteed 404 per tile per poll. An
+  // excluded scene is included here on purpose - it may already have a clip
+  // from an earlier run, and seeing what is being dropped is the whole basis
+  // for deciding whether to put it back.
+  const hasClip = state === "done" || state === "excluded";
   useEffect(() => {
-    if (state !== "done") return;
+    if (!hasClip) return;
     let cancelled = false;
     getSceneClip(projectId, scene.id, take)
       .then((blob) => {
@@ -76,12 +86,12 @@ function ClipTile({
     return () => {
       cancelled = true;
     };
-  }, [projectId, scene.id, state, take]);
+  }, [projectId, scene.id, hasClip, take]);
 
   // How many takes there are to choose between. Only asked once the scene is
   // done, since before that the answer is always none.
   useEffect(() => {
-    if (state !== "done") return;
+    if (!hasClip) return;
     let cancelled = false;
     getSceneTakes(projectId, scene.id)
       .then((result) => {
@@ -93,7 +103,7 @@ function ClipTile({
     return () => {
       cancelled = true;
     };
-  }, [projectId, scene.id, state]);
+  }, [projectId, scene.id, hasClip]);
 
   const [included, setIncluded] = useState(scene.included_in_video);
 
@@ -148,6 +158,7 @@ function ClipTile({
           : state === "failed"
             ? "border-destructive/40 bg-destructive/5"
             : "border-border",
+        state === "excluded" && "border-dashed",
         state === "waiting" && "opacity-60",
         !included && "opacity-50 saturate-0"
       )}
@@ -280,6 +291,13 @@ export function ClipGrid({
   // out, would misdescribe what the run did.
   if (job.scene_id) return null;
 
+  // Position within the run, which is the order the worker actually
+  // generates in. Excluded scenes hold no position and are shown as such.
+  let position = 0;
+  const positions = scenes.map((scene) =>
+    scene.included_in_video ? position++ : null
+  );
+
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {scenes.map((scene, index) => (
@@ -288,7 +306,7 @@ export function ClipGrid({
           projectId={projectId}
           scene={scene}
           index={index}
-          state={stateOf(index, job)}
+          state={stateOf(positions[index], job)}
           aspectRatio={aspectRatio}
           onInclusionChanged={onInclusionChanged}
         />

@@ -46,7 +46,7 @@ async def list_media(
             select(VideoOutput, Project.title)
             .join(Project, Project.id == VideoOutput.project_id)
             .where(VideoOutput.creator_id == creator.id)
-            .order_by(VideoOutput.created_at.desc())
+            .order_by(VideoOutput.updated_at.desc())
         )
         for output, title in rows.all():
             items.append(
@@ -59,7 +59,9 @@ async def list_media(
                     duration_seconds=output.duration_seconds,
                     file_size_bytes=output.file_size_bytes,
                     url=f"/media/{output.id}/file?kind=video",
-                    created_at=output.created_at,
+                    # When this file was rendered, not when the project first
+                    # produced any video: the row is reused on every re-render.
+                    created_at=output.updated_at,
                 )
             )
 

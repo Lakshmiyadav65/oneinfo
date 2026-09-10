@@ -212,14 +212,11 @@ def test_render_size_follows_shape_and_resolution():
     A vertical project stitched at the configured landscape pair pillarboxes
     every scene - and the creator finds out only after paying for all of them.
     """
-    from app.core.config import get_settings
     from app.schemas.output_settings import AspectRatio, OutputSettings, Resolution
     from app.services.project_service import output_size
 
-    settings = get_settings()
-
     def size(aspect: AspectRatio, resolution: Resolution) -> tuple[int, int]:
-        return output_size(settings, OutputSettings(aspect_ratio=aspect, resolution=resolution))
+        return output_size(OutputSettings(aspect_ratio=aspect, resolution=resolution))
 
     assert size(AspectRatio.vertical, Resolution.hd) == (720, 1280)
     assert size(AspectRatio.vertical, Resolution.full_hd) == (1080, 1920)

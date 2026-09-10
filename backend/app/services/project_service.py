@@ -105,14 +105,15 @@ def project_output_settings(project: Project) -> OutputSettings:
     return OutputSettings.model_validate(project.output_settings or {})
 
 
-def output_size(settings: Settings, output: OutputSettings) -> tuple[int, int]:
+def output_size(output: OutputSettings) -> tuple[int, int]:
     """
     The pixel size the final video is stitched at.
 
-    Derived from the creator's shape and resolution rather than from
-    VIDEO_WIDTH/VIDEO_HEIGHT, because those are one landscape pair and a
-    vertical project stitched at them pillarboxes every scene - after all of
-    them have been paid for.
+    Takes no Settings on purpose. It used to, and never read it: an unused
+    parameter naming the exact thing this must not depend on is an invitation
+    to "fix" it by wiring VIDEO_WIDTH/VIDEO_HEIGHT back in. Those are one
+    landscape pair, and a vertical project stitched at them pillarboxes every
+    scene - after all of them have been paid for.
     """
     short_edge = 720 if output.resolution is Resolution.hd else 1080
     long_edge = round(short_edge * 16 / 9)
