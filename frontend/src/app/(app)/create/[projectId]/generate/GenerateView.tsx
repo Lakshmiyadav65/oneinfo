@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Download } from "lucide-react";
 import Link from "next/link";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
+import { getStoryboard } from "@/lib/api/storyboard";
 import {
   startGeneration,
   getGenerationStatus,
@@ -12,6 +14,9 @@ import {
 } from "@/lib/api/generation";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { GenerationProgress } from "@/components/create/GenerationProgress";
+import { ClipGrid } from "@/components/create/ClipGrid";
+import { GenerateDialog } from "@/components/create/GenerateDialog";
+import { CombineClips } from "@/components/create/CombineClips";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -55,8 +60,17 @@ function formatSize(bytes: number | null): string | null {
 export function GenerateView({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const project = useAsyncData(() => getProject(projectId), [projectId]);
+  // The clips being generated. Fetched once: the storyboard is fixed for the
+  // duration of a run, so re-reading it on every poll would be pure traffic.
+  const storyboard = useAsyncData(() => getStoryboard(projectId), [projectId]);
   const [job, setJob] = useState<GenerationJob | null | undefined>(undefined);
   const [isStarting, setIsStarting] = useState(false);
+  // Asked at the point of spending rather than on arrival. Every button that
+  // starts a paid run opens this first.
+  const [askingSettings, setAskingSettings] = useState(false);
+  // Bumped when a scene moves in or out of the cut, so the combine card
+  // re-asks whether the video can be built from what is on hand.
+  const [cutVersion, setCutVersion] = useState(0);
   const [output, setOutput] = useState<VideoOutput | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -151,6 +165,16 @@ export function GenerateView({ projectId }: { projectId: string }) {
     );
   }
 
+  // Named after the project so a folder of downloads is still legible a
+  // week later. Punctuation out, because it lands in a filename.
+  //
+  // Marks are kept alongside letters and digits: Telugu vowel signs are
+  // marks, not letters, and dropping them turned "తెలుగు" into "త-ల-గ".
+  const downloadName =
+    project.data.title
+      .replace(/[^\p{L}\p{N}\p{M}]+/gu, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60) || "video";
   const duration = formatDuration(output?.duration_seconds ?? null);
   const size = formatSize(output?.file_size_bytes ?? null);
   const summary = [
@@ -165,7 +189,65 @@ export function GenerateView({ projectId }: { projectId: string }) {
     <div className="space-y-6">
       <WorkflowHeader project={project.data} activeStep="generate" />
 
+      <GenerateDialog
+        open={askingSettings}
+        onOpenChange={setAskingSettings}
+        projectId={projectId}
+        output={project.data.output_settings}
+        storyboard={storyboard.status === "success" ? storyboard.data : null}
+        onConfirmed={async () => {
+          project.retry();
+          await handleStart();
+        }}
+      />
+
       {job === undefined && <Skeleton className="h-24 w-full" />}
+
+      {/*
+        Above the paid path on purpose. A creator who has already generated
+        every scene one at a time should see the free route to a finished
+        video before the button that regenerates and re-bills all of them.
+      */}
+      {job?.status !== "processing" && job?.status !== "queued" && (
+        <CombineClips
+          projectId={projectId}
+          disabled={isStarting}
+          refreshToken={cutVersion}
+          onStarted={(started) => {
+            // Same reset as starting a paid run: the previous finished
+            // video is about to be replaced, so it must stop being shown
+            // as though it were this run's result.
+            setVideoError(null);
+            setVideoUrl(null);
+            setOutput(null);
+            setJob(started);
+          }}
+        />
+      )}
+
+      {/*
+        Always shown once there is a storyboard, whatever the last job was.
+        Which clips a project has is a fact about the project - hiding the
+        grid because the most recent run happened to be a single-scene
+        preview left the creator with no way to see or choose anything.
+      */}
+      {storyboard.status === "success" && storyboard.data && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Your clips
+          </p>
+          <ClipGrid
+            projectId={projectId}
+            scenes={storyboard.data.scenes}
+            job={job ?? null}
+            aspectRatio={project.data.output_settings.aspect_ratio}
+            onInclusionChanged={() => {
+              setCutVersion((n) => n + 1);
+              storyboard.retry();
+            }}
+          />
+        </div>
+      )}
 
       {job === null && (
         <Card>
@@ -177,7 +259,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
                 video. Nothing has been generated for this project yet.
               </p>
             </div>
-            <Button onClick={handleStart} isLoading={isStarting}>
+            <Button onClick={() => setAskingSettings(true)} isLoading={isStarting}>
               Generate Video
             </Button>
           </CardContent>
@@ -188,6 +270,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
         <Card>
           <CardContent className="space-y-5 p-6">
             <GenerationProgress job={job} />
+
 
             {job.status === "failed" && (
               <div className="space-y-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
@@ -205,7 +288,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={handleStart}
+                  onClick={() => setAskingSettings(true)}
                   isLoading={isStarting}
                 >
                   Try again
@@ -227,7 +310,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
                   generated.
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={handleStart} isLoading={isStarting}>
+                  <Button onClick={() => setAskingSettings(true)} isLoading={isStarting}>
                     Generate the full video
                   </Button>
                   <Button variant="secondary" asChild>
@@ -242,17 +325,36 @@ export function GenerateView({ projectId }: { projectId: string }) {
                 {videoError && <ErrorState description={videoError} />}
                 {!videoError && videoUrl && (
                   <>
-                    <video controls src={videoUrl} className="w-full rounded-md" />
+                    {/* Height-capped and centred: a 9:16 export at full
+                        width fills two screens on its own. */}
+                    <video
+                      controls
+                      src={videoUrl}
+                      className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg border border-border bg-black"
+                    />
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <p className="text-xs text-muted-foreground">{summary}</p>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleStart}
-                        isLoading={isStarting}
-                      >
-                        Regenerate
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/*
+                          The point of the whole workflow. It was buried
+                          behind the player's own overflow menu, which is
+                          browser-dependent and absent on some of them.
+                        */}
+                        <Button size="sm" asChild>
+                          <a href={videoUrl} download={`${downloadName}.mp4`}>
+                            <Download className="size-4" />
+                            Download video
+                          </a>
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setAskingSettings(true)}
+                          isLoading={isStarting}
+                        >
+                          Regenerate
+                        </Button>
+                      </div>
                     </div>
                   </>
                 )}

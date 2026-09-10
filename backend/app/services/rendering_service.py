@@ -6,7 +6,7 @@ from app.providers.ffmpeg_runner import probe_duration_seconds, run_ffmpeg
 
 
 async def render_final_video(
-    settings: Settings, clips: list[Path]
+    settings: Settings, clips: list[Path], size: tuple[int, int] | None = None
 ) -> tuple[Path, float]:
     """
     Normalizes each scene clip to a consistent format, then concatenates them
@@ -20,6 +20,9 @@ async def render_final_video(
     `clips` is the scene files in storyboard order. Returns
     (output_path, duration_seconds).
     """
+    # `size` is the project's own shape and resolution. Falling back to the
+    # configured pair keeps every existing caller and test working unchanged.
+    width, height = size or (settings.video_width, settings.video_height)
     work_dir = Path(tempfile.mkdtemp(prefix="oneinfo-render-"))
 
     normalized_paths: list[Path] = []
@@ -28,8 +31,15 @@ async def render_final_video(
         # Still re-encoded to one size, frame rate and audio layout: the
         # concat below stream-copies, and it produces a broken file if the
         # parts disagree on any of those.
+        # Fitted and padded, never stretched. A plain scale=W:H distorts
+        # anything whose shape differs from the target, and clips genuinely
+        # do differ: a project generated landscape and later switched to
+        # vertical stitches old 16:9 clips into a 9:16 video, and squashing
+        # a face is a worse outcome than a black bar.
         normalize_filter = (
-            f"scale={settings.video_width}:{settings.video_height},fps={settings.video_fps}"
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
+            f"setsar=1,fps={settings.video_fps}"
         )
         await run_ffmpeg(
             settings.ffmpeg_path,

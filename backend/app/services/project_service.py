@@ -3,8 +3,11 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings
 from app.core.errors import NotFoundError
 from app.models.project import Project, ProjectStatus
+from app.schemas.output_settings import AspectRatio, OutputSettings, Resolution
+from app.services import environment_setup_service
 
 
 async def create_project(
@@ -20,11 +23,18 @@ async def create_project(
     chosen_title = (title or "").strip()
     if language is None:
         language = await _last_used_language(db, creator_id)
+
+    # The whole point of saving a setup: a creator who marked one as their
+    # usual gets it on the next project without opening the panel. Nothing
+    # marked means the built-in default, exactly as before.
+    default_setup = await environment_setup_service.get_default_setup(db, creator_id)
+
     project = Project(
         creator_id=creator_id,
         title=chosen_title or idea.strip()[:80],
         idea=idea,
         language=language,
+        default_environment=default_setup.environment if default_setup else None,
         title_is_auto=not chosen_title,
         status=ProjectStatus.draft,
     )
@@ -83,6 +93,49 @@ async def update_language(
     """
     project = await get_owned_project(db, creator_id, project_id)
     project.language = language
+    await db.commit()
+    await db.refresh(project)
+    return project
+
+def project_output_settings(project: Project) -> OutputSettings:
+    """
+    What this project generates at. Null on anything created before the panel
+    existed, which reads as the defaults rather than as an error.
+    """
+    return OutputSettings.model_validate(project.output_settings or {})
+
+
+def output_size(output: OutputSettings) -> tuple[int, int]:
+    """
+    The pixel size the final video is stitched at.
+
+    Takes no Settings on purpose. It used to, and never read it: an unused
+    parameter naming the exact thing this must not depend on is an invitation
+    to "fix" it by wiring VIDEO_WIDTH/VIDEO_HEIGHT back in. Those are one
+    landscape pair, and a vertical project stitched at them pillarboxes every
+    scene - after all of them have been paid for.
+    """
+    short_edge = 720 if output.resolution is Resolution.hd else 1080
+    long_edge = round(short_edge * 16 / 9)
+    # Kept even: libx264 with yuv420p rejects an odd dimension outright.
+    long_edge += long_edge % 2
+    if output.aspect_ratio is AspectRatio.vertical:
+        return short_edge, long_edge
+    return long_edge, short_edge
+
+
+async def set_output_settings(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, output: OutputSettings
+) -> Project:
+    """
+    Changes what this project generates at.
+
+    Leaves everything already generated alone. Clips rendered at the old
+    settings stay as they are until the creator regenerates - re-rendering
+    them here would spend money nobody asked to spend.
+    """
+    project = await get_owned_project(db, creator_id, project_id)
+    project.output_settings = output.model_dump(mode="json")
     await db.commit()
     await db.refresh(project)
     return project

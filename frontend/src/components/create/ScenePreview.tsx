@@ -1,32 +1,77 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Download } from "lucide-react";
 import { generateScene, getGenerationStatus, getSceneClip } from "@/lib/api/generation";
 import { Button } from "@/components/ui/Button";
+import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
+import { GenerateDialog } from "@/components/create/GenerateDialog";
+import { sceneCost } from "@/lib/workflow/scene-cost";
+import type { OutputSettings } from "@/types/output-settings";
+import type { Storyboard, StoryboardScene } from "@/types/storyboard";
 
 /**
- * Renders one scene on its own and plays it back.
+ * Renders one scene on its own, plays it back, and hands it over.
  *
  * Exists because generating the whole video to check a single shot is an
  * expensive way to find out you don't like it — an on-camera scene alone can
  * cost more than all the b-roll combined. Previewing the one scene you're
  * unsure about turns several paid full runs into one paid scene.
+ *
+ * The clip is loaded on arrival, not only after generating. It was paid for
+ * and it is still on the server; making it disappear on reload implied it
+ * had to be generated again, which is the one mistake here that costs money.
  */
 export function ScenePreview({
   projectId,
-  sceneId,
-  cost,
+  scene,
+  output,
+  storyboard,
+  onSettingsSaved,
 }: {
   projectId: string;
-  sceneId: string;
-  cost: string;
+  scene: StoryboardScene;
+  output: OutputSettings;
+  storyboard: Storyboard;
+  /** The dialog saved new settings, so the project needs re-reading. */
+  onSettingsSaved: () => void;
 }) {
+  const sceneId = scene.id;
   const { toast } = useToast();
+  // The settings are asked here rather than on arrival: they only matter at
+  // the moment of spending, and this button is that moment.
+  const [askingSettings, setAskingSettings] = useState(false);
   const [running, setRunning] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [clipUrl, setClipUrl] = useState<string | null>(null);
   const objectUrl = useRef<string | null>(null);
+
+  const showClip = useCallback(async () => {
+    const blob = await getSceneClip(projectId, sceneId);
+    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+    objectUrl.current = URL.createObjectURL(blob);
+    setClipUrl(objectUrl.current);
+  }, [projectId, sceneId]);
+
+  // Whatever was generated before. A 404 means this scene has never been
+  // generated, which is the ordinary case and not worth a message.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const blob = await getSceneClip(projectId, sceneId);
+        if (cancelled) return;
+        objectUrl.current = URL.createObjectURL(blob);
+        setClipUrl(objectUrl.current);
+      } catch {
+        // Never generated. Nothing to show, nothing to say.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, sceneId]);
 
   useEffect(
     () => () => {
@@ -34,13 +79,6 @@ export function ScenePreview({
     },
     []
   );
-
-  async function showClip() {
-    const blob = await getSceneClip(projectId, sceneId);
-    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-    objectUrl.current = URL.createObjectURL(blob);
-    setClipUrl(objectUrl.current);
-  }
 
   async function handleGenerate() {
     setRunning(true);
@@ -79,27 +117,70 @@ export function ScenePreview({
 
   return (
     <div className="space-y-2 pt-1">
+      <GenerateDialog
+        open={askingSettings}
+        onOpenChange={setAskingSettings}
+        projectId={projectId}
+        output={output}
+        storyboard={storyboard}
+        scene={scene}
+        onConfirmed={async () => {
+          onSettingsSaved();
+          await handleGenerate();
+        }}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="secondary"
           size="sm"
-          isLoading={running}
           disabled={running}
-          onClick={() => void handleGenerate()}
+          onClick={() => setAskingSettings(true)}
         >
           {clipUrl ? "Regenerate this scene" : "Generate this scene"}
         </Button>
-        <span className="text-xs text-muted-foreground">
-          {running ? (stage ?? "Working…") : `Just this scene — ${cost}`}
-        </span>
+        {!running && (
+          <span className="text-xs text-muted-foreground">
+            Just this scene —{" "}
+            {sceneCost(scene.duration_seconds, scene.features_creator, output)}
+          </span>
+        )}
       </div>
 
+      {/*
+        A named stage against a spinner, not a disabled button. Generation
+        runs for the better part of a minute, and a button that has simply
+        gone quiet reads as a page that has broken.
+      */}
+      {running && (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+          <Spinner className="size-4" />
+          <p className="text-xs text-foreground">
+            {stage ?? "Working…"}
+            <span className="text-muted-foreground"> — this takes about a minute.</span>
+          </p>
+        </div>
+      )}
+
       {clipUrl && (
-        <video
-          src={clipUrl}
-          controls
-          className="w-full max-w-sm rounded-md border border-border"
-        />
+        <div className="space-y-2">
+          {/*
+            Capped by height, not width. These are 9:16 now, and a vertical
+            clip at max-w-sm stands 683px tall - it pushed the rest of the
+            scene off the screen entirely.
+          */}
+          <video
+            src={clipUrl}
+            controls
+            className="max-h-72 w-auto max-w-full rounded-lg border border-border bg-black"
+          />
+          <Button variant="ghost" size="sm" asChild>
+            <a href={clipUrl} download={`scene-${scene.order}.mp4`}>
+              <Download className="size-4" />
+              Download this clip
+            </a>
+          </Button>
+        </div>
       )}
     </div>
   );

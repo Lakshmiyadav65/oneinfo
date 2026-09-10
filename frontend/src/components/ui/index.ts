@@ -10,6 +10,7 @@ export * from "@/components/ui/Progress";
 export * from "@/components/ui/EmptyState";
 export * from "@/components/ui/ErrorState";
 export * from "@/components/ui/Dialog";
+export * from "@/components/ui/Disclosure";
 export * from "@/components/ui/Dropdown";
 export * from "@/components/ui/Tooltip";
 export * from "@/components/ui/Toast";

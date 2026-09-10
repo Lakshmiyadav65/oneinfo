@@ -3,7 +3,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,7 +14,7 @@ from app.models.asset import Asset, AssetType
 from app.models.creator import Creator
 from app.models.generation_job import GenerationJob, JobStatus
 from app.models.project import Project, ProjectStatus
-from app.models.storyboard import Storyboard
+from app.models.storyboard import Storyboard, StoryboardScene
 from app.models.video_output import VideoOutput
 from app.providers.ffmpeg_runner import FFmpegError, probe_duration_seconds
 from app.providers.storage import get_storage_provider
@@ -24,7 +24,9 @@ from app.providers.video.base import (
     VideoProvider,
     snap_duration,
 )
+from app.schemas.output_settings import ModelTier
 from app.services import creator_face_service, project_service
+from app.services.project_service import output_size, project_output_settings
 from app.services.rendering_service import render_final_video
 
 
@@ -99,12 +101,21 @@ async def start_generation(
     if storyboard is None or not storyboard.scenes:
         raise ValidationAppError("Generate a storyboard before starting video generation.")
 
-    # A single-scene job validates and bills only that scene.
-    target_scenes = storyboard.scenes
+    # Excluded scenes are not generated at all. Paying to make a clip the
+    # creator has already decided to leave out is the exact waste this flag
+    # exists to prevent. A single-scene preview is exempt: asking for one
+    # scene by name is a deliberate act, and it is how someone decides
+    # whether to put an excluded scene back.
+    target_scenes = [s for s in storyboard.scenes if s.included_in_video]
     if scene_id is not None:
         target_scenes = [s for s in storyboard.scenes if s.id == scene_id]
         if not target_scenes:
             raise NotFoundError("No such scene in this storyboard.")
+    elif not target_scenes:
+        raise ValidationAppError(
+            "Every scene has been left out of this video, so there is nothing to "
+            "generate. Put at least one back in."
+        )
 
     # Check every scene up front. Scenes are generated one at a time and
     # each finished one is billed, so a storyboard the provider will reject
@@ -159,6 +170,115 @@ async def start_generation(
     return job, True
 
 
+async def _existing_clip(
+    db: AsyncSession, scene: StoryboardScene, take: int | None = None
+) -> Asset | None:
+    """
+    The clip on hand for one scene, or None.
+
+    Falls back to take 0 when the picked take is missing, for the same reason
+    get_scene_asset does: clips generated before takes existed all carry
+    index 0, and a scene pointing at a take that run never produced still has
+    a perfectly good clip sitting there.
+    """
+    wanted = scene.selected_take if take is None else take
+    for candidate in (wanted, 0):
+        result = await db.execute(
+            select(Asset)
+            .where(
+                Asset.scene_id == scene.id,
+                Asset.asset_type == AssetType.scene_video,
+                Asset.take_index == candidate,
+            )
+            .order_by(Asset.created_at.desc())
+            .limit(1)
+        )
+        asset = result.scalar_one_or_none()
+        if asset is not None:
+            return asset
+    return None
+
+
+async def get_stitch_readiness(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID
+) -> tuple[int, list[int]]:
+    """
+    (scenes with a clip, scene numbers still missing one).
+
+    Asked before offering the button rather than after pressing it: a
+    creator who is one scene short should be told which scene, not handed a
+    refusal once they have committed.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    result = await db.execute(
+        select(Storyboard)
+        .where(Storyboard.project_id == project_id)
+        .options(selectinload(Storyboard.scenes))
+    )
+    storyboard = result.scalar_one_or_none()
+    if storyboard is None or not storyboard.scenes:
+        return 0, []
+
+    ready = 0
+    missing: list[int] = []
+    # Only scenes actually in the cut. A scene the creator left out must not
+    # hold the Combine button hostage by counting as missing.
+    included = [s for s in storyboard.scenes if s.included_in_video]
+    for scene in sorted(included, key=lambda s: s.order):
+        if await _existing_clip(db, scene) is not None:
+            ready += 1
+        else:
+            missing.append(scene.order)
+    return ready, missing
+
+
+async def start_stitch(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID
+) -> tuple[GenerationJob, bool]:
+    """
+    Makes the finished video out of the clips already generated.
+
+    Calls the video provider zero times, so it costs nothing. This is the
+    gap it closes: generating scenes one at a time left a project full of
+    paid clips and no way to combine them, because the only route to a
+    finished video was a full run that regenerated and re-billed every one
+    of them.
+    """
+    project = await project_service.get_owned_project(db, creator_id, project_id)
+
+    ready, missing = await get_stitch_readiness(db, creator_id, project_id)
+    if not ready:
+        raise ValidationAppError(
+            "None of the scenes have been generated yet, so there is nothing to "
+            "combine. Generate the video first."
+        )
+    if missing:
+        listed = ", ".join(str(order) for order in missing)
+        raise ValidationAppError(
+            f"Scene {listed} hasn't been generated yet, so the video would have a "
+            "gap in it. Generate the missing scenes, then combine."
+            if len(missing) == 1
+            else f"Scenes {listed} haven't been generated yet, so the video would "
+            "have gaps in it. Generate the missing scenes, then combine."
+        )
+
+    existing = await _get_latest_job(db, project.id)
+    if existing is not None and existing.status in (JobStatus.queued, JobStatus.processing):
+        return existing, False
+
+    job = GenerationJob(
+        project_id=project.id,
+        creator_id=creator_id,
+        stitch_only=True,
+        status=JobStatus.queued,
+    )
+    db.add(job)
+    project.status = ProjectStatus.generating
+    await db.commit()
+    await db.refresh(job)
+    return job, True
+
+
 async def get_generation_status(
     db: AsyncSession, creator_id: str, project_id: uuid.UUID
 ) -> GenerationJob:
@@ -179,28 +299,110 @@ async def get_video_output(db: AsyncSession, creator_id: str, project_id: uuid.U
 
 
 async def get_scene_asset(
-    db: AsyncSession, creator_id: str, project_id: uuid.UUID, scene_id: uuid.UUID
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    take: int | None = None,
 ) -> Asset:
     """
     The newest generated clip for one scene. Newest rather than only, since
     regenerating a scene writes a fresh asset each time.
+
+    `take` picks one of several takes from the same run. Omitted, it returns
+    whichever take the scene is currently set to use, so a caller that knows
+    nothing about takes still gets the clip the final video will contain.
     """
     await project_service.get_owned_project(db, creator_id, project_id)
+
+    if take is None:
+        scene = await db.get(StoryboardScene, scene_id)
+        take = scene.selected_take if scene else 0
+
+    # The take filter is applied per attempt rather than baked into a shared
+    # query. Adding a second take_index clause to an existing one ANDs them
+    # into a contradiction, which made the take-0 fallback below unreachable
+    # and turned a missing take into a 404.
+    def for_take(wanted: int):
+        return (
+            select(Asset)
+            .where(
+                Asset.project_id == project_id,
+                Asset.scene_id == scene_id,
+                Asset.creator_id == creator_id,
+                Asset.asset_type == AssetType.scene_video,
+                Asset.take_index == wanted,
+            )
+            .order_by(Asset.created_at.desc())
+            .limit(1)
+        )
+
+    asset = (await db.execute(for_take(take))).scalar_one_or_none()
+
+    # Clips generated before takes existed carry take_index 0 by migration
+    # default, so this only fires when a caller asks for a take that run
+    # never produced.
+    if asset is None and take != 0:
+        asset = (await db.execute(for_take(0))).scalar_one_or_none()
+
+    if asset is None:
+        raise NotFoundError("This scene hasn't been generated yet.")
+    return asset
+
+
+async def get_scene(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, scene_id: uuid.UUID
+) -> StoryboardScene:
+    await project_service.get_owned_project(db, creator_id, project_id)
+    scene = await db.get(StoryboardScene, scene_id)
+    if scene is None or scene.creator_id != creator_id:
+        raise NotFoundError("No such scene in this storyboard.")
+    return scene
+
+
+async def count_scene_takes(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID, scene_id: uuid.UUID
+) -> int:
+    """How many takes of this scene are on hand to choose between."""
+    await project_service.get_owned_project(db, creator_id, project_id)
     result = await db.execute(
-        select(Asset)
-        .where(
+        select(func.count(func.distinct(Asset.take_index))).where(
             Asset.project_id == project_id,
             Asset.scene_id == scene_id,
             Asset.creator_id == creator_id,
             Asset.asset_type == AssetType.scene_video,
         )
-        .order_by(Asset.created_at.desc())
-        .limit(1)
     )
-    asset = result.scalar_one_or_none()
-    if asset is None:
-        raise NotFoundError("This scene hasn't been generated yet.")
-    return asset
+    return int(result.scalar_one() or 0)
+
+
+async def select_scene_take(
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    take: int,
+) -> StoryboardScene:
+    """
+    Picks which take the final video uses for one scene.
+
+    Changes nothing that has already been rendered: the finished video is
+    only rebuilt when the creator asks for it, so choosing a take here costs
+    nothing and is freely reversible.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    scene = await db.get(StoryboardScene, scene_id)
+    if scene is None or scene.creator_id != creator_id:
+        raise NotFoundError("No such scene in this storyboard.")
+
+    available = await count_scene_takes(db, creator_id, project_id, scene_id)
+    if take < 0 or take >= max(available, 1):
+        raise ValidationAppError("That take hasn't been generated for this scene.")
+
+    scene.selected_take = take
+    await db.commit()
+    await db.refresh(scene)
+    return scene
 
 
 async def _wait_for_completion(
@@ -218,6 +420,93 @@ async def _wait_for_completion(
             raise GenerationError(status.error_message or "Video generation failed.")
         await asyncio.sleep(poll_interval_seconds)
     raise GenerationError("Video generation timed out.")
+
+
+async def _discard_previous_takes(
+    db: AsyncSession,
+    storage,
+    project: Project,
+    scene: StoryboardScene,
+    new_take_count: int,
+) -> None:
+    """
+    Clears out a scene's earlier clips before its new ones are written.
+
+    Rows always go, because the new run's keys overwrite the old files and a
+    row pointing at replaced content describes a clip that no longer exists.
+    Files only go when the new run has fewer takes than the old one, since
+    those higher-numbered keys are the only ones nothing is about to
+    overwrite.
+    """
+    result = await db.execute(
+        select(Asset).where(
+            Asset.project_id == project.id,
+            Asset.scene_id == scene.id,
+            Asset.asset_type == AssetType.scene_video,
+        )
+    )
+    for asset in result.scalars().all():
+        if asset.take_index >= new_take_count:
+            # Best effort. A file that cannot be removed is an orphan taking
+            # up space, which is not worth failing a paid run over.
+            try:
+                await asyncio.to_thread(storage.delete, asset.storage_key)
+            except Exception:
+                pass
+        await db.delete(asset)
+    await db.flush()
+
+
+async def _finish_video(
+    db: AsyncSession,
+    settings: Settings,
+    storage,
+    job: GenerationJob,
+    project: Project,
+    render_inputs: list[Path],
+    output,
+    temp_files: list[Path],
+) -> None:
+    """
+    Stitches the clips into the finished video and marks the run done.
+
+    Shared by both paths deliberately. A stitch-only run and a full run must
+    produce byte-identical output from the same clips - if they could differ,
+    "combine what I have" would quietly be a second, lesser kind of render.
+    """
+    job.current_stage = "Rendering final video"
+    await db.commit()
+
+    final_path, duration = await render_final_video(
+        settings, render_inputs, size=output_size(output)
+    )
+    temp_files.append(final_path)
+
+    if not final_path.exists() or final_path.stat().st_size == 0 or duration <= 0:
+        raise GenerationError("Rendered output failed validation.")
+
+    final_bytes = final_path.read_bytes()
+    output_storage_key = f"{project.creator_id}/{project.id}/output.mp4"
+    await asyncio.to_thread(storage.save, output_storage_key, final_bytes)
+
+    existing_output = await db.execute(
+        select(VideoOutput).where(VideoOutput.project_id == project.id)
+    )
+    video_output = existing_output.scalar_one_or_none()
+    if video_output is None:
+        video_output = VideoOutput(project_id=project.id, creator_id=project.creator_id)
+        db.add(video_output)
+
+    video_output.storage_key = output_storage_key
+    video_output.mime_type = "video/mp4"
+    video_output.duration_seconds = duration
+    video_output.file_size_bytes = len(final_bytes)
+
+    project.status = ProjectStatus.completed
+    job.status = JobStatus.completed
+    job.current_stage = "Completed"
+    job.error_message = None
+    await db.commit()
 
 
 async def run_generation_job(job_id: uuid.UUID) -> None:
@@ -250,13 +539,24 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 .options(selectinload(Storyboard.scenes))
             )
             storyboard = result.scalar_one()
-            scenes = sorted(storyboard.scenes, key=lambda s: s.order)
+            scenes = sorted(
+                (s for s in storyboard.scenes if s.included_in_video),
+                key=lambda s: s.order,
+            )
             # A single-scene job renders that scene alone and stops there.
             single_scene = job.scene_id is not None
             if single_scene:
-                scenes = [s for s in scenes if s.id == job.scene_id]
+                # From the whole storyboard, not the filtered list: previewing
+                # one scene by name is how a creator decides whether to put an
+                # excluded scene back, so exclusion must not block it.
+                scenes = [s for s in storyboard.scenes if s.id == job.scene_id]
                 if not scenes:
                     raise GenerationError("That scene is no longer in the storyboard.")
+            elif not scenes:
+                raise GenerationError(
+                    "Every scene has been left out of this video, so there is "
+                    "nothing to render. Put at least one back in."
+                )
 
             # Set before the first (billable) request goes out, so the UI can
             # show real progress from the moment the run starts rather than an
@@ -265,8 +565,43 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             job.scenes_completed = 0
             await db.commit()
 
-            video_provider = get_video_provider(settings)
             storage = get_storage_provider(settings)
+            output = project_output_settings(project)
+            render_inputs: list[Path] = []
+
+            if job.stitch_only:
+                # Never touches the video provider, which is the whole point:
+                # this run is free. Building a provider here would also load
+                # service account credentials for a job that cannot make a
+                # request, and would fail a project whose credentials have
+                # since gone stale for no reason at all.
+                for index, scene in enumerate(scenes, start=1):
+                    job.current_stage = f"Collecting clip {index} of {len(scenes)}"
+                    await db.commit()
+
+                    asset = await _existing_clip(db, scene)
+                    if asset is None:
+                        raise GenerationError(
+                            f"Scene {scene.order} has no generated clip any more, so "
+                            "the video cannot be combined. Generate that scene, then "
+                            "try again."
+                        )
+                    clip_bytes = await asyncio.to_thread(storage.read, asset.storage_key)
+                    local_path = (
+                        Path(tempfile.gettempdir()) / f"oneinfo-stitch-{uuid.uuid4()}.mp4"
+                    )
+                    local_path.write_bytes(clip_bytes)
+                    temp_files.append(local_path)
+                    render_inputs.append(local_path)
+                    job.scenes_completed = index
+                    await db.commit()
+
+                await _finish_video(
+                    db, settings, storage, job, project, render_inputs, output, temp_files
+                )
+                return
+
+            video_provider = get_video_provider(settings)
 
             # Fetched once, not per scene: the same photos go to every
             # on-camera scene, and re-reading them from storage each time
@@ -277,7 +612,6 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     db, settings, project.creator_id
                 )
 
-            render_inputs: list[Path] = []
             for index, scene in enumerate(scenes, start=1):
                 job.current_stage = (
                     "Generating your scene"
@@ -293,39 +627,64 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                         # Only on-camera scenes carry the face, so only they
                         # get routed to the pricier reference model.
                         reference_images=face_images if scene.features_creator else [],
-                        # Matched to the size the scenes are stitched at, so
-                        # a vertical project never pays for clips that get
-                        # pillarboxed at render.
-                        aspect_ratio=(
-                            "9:16"
-                            if settings.video_height > settings.video_width
-                            else "16:9"
-                        ),
+                        aspect_ratio=output.aspect_ratio.value,
+                        resolution=output.resolution.value,
+                        sample_count=output.takes,
+                        prefer_reference_model=output.model_tier is ModelTier.fast,
                     )
                 )
                 await _wait_for_completion(video_provider, provider_job_id)
-                video_bytes = await video_provider.download_result(provider_job_id)
+                takes = await video_provider.download_all_results(provider_job_id)
 
-                local_path = Path(tempfile.gettempdir()) / f"oneinfo-scene-{uuid.uuid4()}.mp4"
-                local_path.write_bytes(video_bytes)
-                temp_files.append(local_path)
+                # Every take is saved, because every take was billed. The
+                # creator picks between them afterwards; throwing the rest
+                # away here would charge four times for one clip.
+                # Whatever this scene had before is gone. The storage keys
+                # are deterministic per scene and take, so a re-run overwrites
+                # the files but used to leave the old rows behind pointing at
+                # them - which listed the same clip twice in the media library
+                # and let the take picker offer takes from a run whose files
+                # no longer exist. Found by the review; 7 keys in the live
+                # database had two rows each.
+                await _discard_previous_takes(db, storage, project, scene, len(takes))
 
-                scene_duration = await probe_duration_seconds(settings.ffprobe_path, str(local_path))
-
-                storage_key = f"{project.creator_id}/{project.id}/scenes/{scene.id}.mp4"
-                await asyncio.to_thread(storage.save, storage_key, video_bytes)
-                db.add(
-                    Asset(
-                        creator_id=project.creator_id,
-                        project_id=project.id,
-                        scene_id=scene.id,
-                        asset_type=AssetType.scene_video,
-                        storage_key=storage_key,
-                        mime_type="video/mp4",
-                        duration_seconds=scene_duration,
+                take_paths: list[Path] = []
+                for take_index, video_bytes in enumerate(takes):
+                    local_path = (
+                        Path(tempfile.gettempdir()) / f"oneinfo-scene-{uuid.uuid4()}.mp4"
                     )
-                )
-                render_inputs.append(local_path)
+                    local_path.write_bytes(video_bytes)
+                    temp_files.append(local_path)
+                    take_paths.append(local_path)
+
+                    take_duration = await probe_duration_seconds(
+                        settings.ffprobe_path, str(local_path)
+                    )
+                    storage_key = (
+                        f"{project.creator_id}/{project.id}/scenes/"
+                        f"{scene.id}-take{take_index}.mp4"
+                    )
+                    await asyncio.to_thread(storage.save, storage_key, video_bytes)
+                    db.add(
+                        Asset(
+                            creator_id=project.creator_id,
+                            project_id=project.id,
+                            scene_id=scene.id,
+                            asset_type=AssetType.scene_video,
+                            storage_key=storage_key,
+                            mime_type="video/mp4",
+                            duration_seconds=take_duration,
+                            take_index=take_index,
+                        )
+                    )
+
+                # A fresh run invalidates whichever take was picked last
+                # time, whatever its index: take 3 of this run is not the clip
+                # the creator reviewed and chose, it just happens to sit in
+                # the same slot. Resetting only when the new run had fewer
+                # takes silently shipped a clip nobody had watched.
+                scene.selected_take = 0
+                render_inputs.append(take_paths[scene.selected_take])
                 job.scenes_completed = index
                 await db.commit()
 
@@ -340,37 +699,9 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 await db.commit()
                 return
 
-            job.current_stage = "Rendering final video"
-            await db.commit()
-
-            final_path, duration = await render_final_video(settings, render_inputs)
-            temp_files.append(final_path)
-
-            if not final_path.exists() or final_path.stat().st_size == 0 or duration <= 0:
-                raise GenerationError("Rendered output failed validation.")
-
-            final_bytes = final_path.read_bytes()
-            output_storage_key = f"{project.creator_id}/{project.id}/output.mp4"
-            await asyncio.to_thread(storage.save, output_storage_key, final_bytes)
-
-            existing_output = await db.execute(
-                select(VideoOutput).where(VideoOutput.project_id == project.id)
+            await _finish_video(
+                db, settings, storage, job, project, render_inputs, output, temp_files
             )
-            video_output = existing_output.scalar_one_or_none()
-            if video_output is None:
-                video_output = VideoOutput(project_id=project.id, creator_id=project.creator_id)
-                db.add(video_output)
-
-            video_output.storage_key = output_storage_key
-            video_output.mime_type = "video/mp4"
-            video_output.duration_seconds = duration
-            video_output.file_size_bytes = len(final_bytes)
-
-            project.status = ProjectStatus.completed
-            job.status = JobStatus.completed
-            job.current_stage = "Completed"
-            job.error_message = None
-            await db.commit()
         except Exception as exc:
             await db.rollback()
             job = await db.get(GenerationJob, job_id)

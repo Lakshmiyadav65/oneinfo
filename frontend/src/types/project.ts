@@ -1,4 +1,5 @@
 import type { SceneEnvironment } from "@/types/environment";
+import type { OutputSettings } from "@/types/output-settings";
 
 export type ProjectStatus =
   | "draft"
@@ -29,6 +30,8 @@ export type Project = {
   selected_hook_id: string | null;
   /** Filming setup new scenes inherit. */
   default_environment: SceneEnvironment;
+  /** Shape, resolution, model tier and takes. Always present. */
+  output_settings: OutputSettings;
   created_at: string;
   updated_at: string;
 };

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.project import ProjectStatus
 from app.schemas.environment import SceneEnvironment
+from app.schemas.output_settings import OutputSettings
 
 
 class ProjectCreateIn(BaseModel):
@@ -34,11 +35,23 @@ class ProjectOut(BaseModel):
     # so the UI never has to render an absent setup.
     default_environment: SceneEnvironment = SceneEnvironment()
 
+    # What the video generates at. Defaulted rather than nullable for the
+    # same reason as the setup above: the panel never has to render an
+    # absent value.
+    output_settings: OutputSettings = OutputSettings()
+
     @field_validator("default_environment", mode="before")
     @classmethod
     def _default_environment(cls, value: object) -> object:
         # Null on projects created before setups existed.
         return value or {}
+
+    @field_validator("output_settings", mode="before")
+    @classmethod
+    def _output_settings(cls, value: object) -> object:
+        # Null on projects created before the panel existed.
+        return value or {}
+
     created_at: datetime
     updated_at: datetime
 

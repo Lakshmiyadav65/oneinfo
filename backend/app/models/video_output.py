@@ -27,3 +27,9 @@ class VideoOutput(Base):
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # There is one row per project, reused on every re-render, so created_at
+    # is when the project first produced a video and says nothing about the
+    # file currently stored. The media library sorts and dates on this.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

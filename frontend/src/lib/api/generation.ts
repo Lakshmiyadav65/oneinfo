@@ -46,6 +46,50 @@ export async function generateScene(
   );
 }
 
-export async function getSceneClip(projectId: string, sceneId: string): Promise<Blob> {
-  return api.getBlob(`/projects/${projectId}/scenes/${sceneId}/file`);
+export async function getSceneClip(
+  projectId: string,
+  sceneId: string,
+  /** One of several takes. Omitted, the server serves the one in use. */
+  take?: number
+): Promise<Blob> {
+  const suffix = take === undefined ? "" : `?take=${take}`;
+  return api.getBlob(`/projects/${projectId}/scenes/${sceneId}/file${suffix}`);
 }
+
+export type SceneTakes = { takes: number; selected_take: number };
+
+export function getSceneTakes(projectId: string, sceneId: string): Promise<SceneTakes> {
+  return api.get<SceneTakes>(`/projects/${projectId}/scenes/${sceneId}/takes`);
+}
+
+/**
+ * Picks the take this scene contributes to the final video. Costs nothing
+ * and is reversible: the finished video is only rebuilt on request.
+ */
+export function selectSceneTake(
+  projectId: string,
+  sceneId: string,
+  take: number
+): Promise<SceneTakes> {
+  return api.post<SceneTakes>(`/projects/${projectId}/scenes/${sceneId}/takes/${take}`, {});
+}
+
+export type StitchReadiness = {
+  scenes_total: number;
+  scenes_ready: number;
+  /** Scene numbers with no clip yet. Empty means combining is available. */
+  missing_scenes: number[];
+};
+
+export function getStitchReadiness(projectId: string): Promise<StitchReadiness> {
+  return api.get<StitchReadiness>(`/projects/${projectId}/stitch`);
+}
+
+/**
+ * Combines the clips already generated into the finished video. Calls the
+ * video provider zero times, so it costs nothing.
+ */
+export function startStitch(projectId: string): Promise<GenerationJob> {
+  return api.post<GenerationJob>(`/projects/${projectId}/stitch`, {});
+}
+

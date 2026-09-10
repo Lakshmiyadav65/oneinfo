@@ -139,6 +139,8 @@ _NEGATIVE_PROMPT = (
 
 
 def aspect_ratio_label(width: int, height: int) -> str:
+    """Deprecated shape: prefer project_aspect_label, which reads the
+    project's own setting rather than the global render size."""
     """
     The aspect line, derived from the size the final video is actually
     rendered at rather than stated independently.

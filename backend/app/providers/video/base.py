@@ -15,6 +15,16 @@ class VideoGenerationRequest(BaseModel):
     # say so here - naming the ratio inside the prompt text does not change
     # the pixels that come back.
     aspect_ratio: str = "16:9"
+    # "720p" or "1080p".
+    resolution: str = "720p"
+    # How many takes of this scene to generate in one request. Asking for
+    # four costs four times as much and returns four videos, which is the
+    # whole point: a creator picks the best rather than paying for a re-run.
+    sample_count: int = 1
+    # True when the caller wants the pricier reference tier for this scene
+    # even without a face - kept separate from reference_images so the model
+    # choice and the images that force it stay one decision.
+    prefer_reference_model: bool = False
 
 
 class VideoJobStatus(BaseModel):
@@ -39,6 +49,8 @@ class VideoProvider(Protocol):
     async def get_job_status(self, job_id: str) -> VideoJobStatus: ...
 
     async def download_result(self, job_id: str) -> bytes: ...
+
+    async def download_all_results(self, job_id: str) -> list[bytes]: ...
 
 
 def snap_duration(value: int, allowed: tuple[int, ...] | None) -> int:

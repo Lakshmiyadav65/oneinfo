@@ -16,6 +16,7 @@ from app.schemas.project import (
     ProjectOut,
     ProjectUpdateIn,
 )
+from app.schemas.output_settings import OutputSettings
 from app.schemas.storyboard import ProjectEnvironmentIn
 from app.services import idea_service, project_service, storyboard_service
 
@@ -51,6 +52,24 @@ async def create_project(
     return await project_service.create_project(
         db, creator.id, payload.idea, payload.title, payload.language
     )
+
+
+@router.patch("/{project_id}/output-settings", response_model=ProjectOut)
+async def set_output_settings(
+    project_id: uuid.UUID,
+    payload: OutputSettings,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> Project:
+    """
+    Changes what this project generates at: shape, resolution, model tier and
+    how many takes of each scene.
+
+    Nothing already generated is re-rendered. Clips made at the old settings
+    stay as they are until the creator asks for a new run, because redoing
+    them here would spend money they did not agree to spend.
+    """
+    return await project_service.set_output_settings(db, creator.id, project_id, payload)
 
 
 @router.get("", response_model=list[ProjectOut])

@@ -205,3 +205,26 @@ def test_aspect_line_follows_the_size_we_actually_render():
 
     assert aspect_ratio_label(1080, 1920).startswith("9:16")
     assert aspect_ratio_label(1280, 720).startswith("16:9")
+
+
+def test_render_size_follows_shape_and_resolution():
+    """
+    A vertical project stitched at the configured landscape pair pillarboxes
+    every scene - and the creator finds out only after paying for all of them.
+    """
+    from app.schemas.output_settings import AspectRatio, OutputSettings, Resolution
+    from app.services.project_service import output_size
+
+    def size(aspect: AspectRatio, resolution: Resolution) -> tuple[int, int]:
+        return output_size(OutputSettings(aspect_ratio=aspect, resolution=resolution))
+
+    assert size(AspectRatio.vertical, Resolution.hd) == (720, 1280)
+    assert size(AspectRatio.vertical, Resolution.full_hd) == (1080, 1920)
+    assert size(AspectRatio.landscape, Resolution.hd) == (1280, 720)
+    assert size(AspectRatio.landscape, Resolution.full_hd) == (1920, 1080)
+
+    # libx264 with yuv420p rejects an odd dimension outright.
+    for aspect in AspectRatio:
+        for resolution in Resolution:
+            width, height = size(aspect, resolution)
+            assert width % 2 == 0 and height % 2 == 0

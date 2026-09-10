@@ -31,43 +31,65 @@ class DevVideoProvider:
 
     def __init__(self, settings: Settings):
         self._settings = settings
-        self._jobs: dict[str, Path] = {}
+        # job_id -> one path per take, so the takes UI can be exercised
+        # without paying Veo for four of anything.
+        self._jobs: dict[str, list[Path]] = {}
 
     async def create_video_job(self, request: VideoGenerationRequest) -> str:
         job_id = str(uuid.uuid4())
-        output_path = Path(tempfile.gettempdir()) / f"oneinfo-dev-scene-{job_id}.mp4"
         settings = self._settings
 
-        color = _PALETTE[hash(request.visual_prompt) % len(_PALETTE)]
-        text = escape_drawtext(request.visual_prompt)
-
-        color_source = (
-            f"color=c=0x{color}:s={settings.video_width}x{settings.video_height}"
-            f":d={request.duration_seconds}:r={settings.video_fps}"
-        )
-        drawtext_filter = (
-            f"drawtext=text='{text}':fontcolor=white:fontsize=40:"
-            "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.4:boxborderw=20"
+        # The dev clip is drawn at the size the project actually renders at,
+        # so a vertical project looks vertical here too rather than only
+        # after switching to a provider that bills.
+        width, height = (
+            (settings.video_height, settings.video_width)
+            if request.aspect_ratio == "9:16"
+            else (settings.video_width, settings.video_height)
         )
 
-        await run_ffmpeg(
-            settings.ffmpeg_path,
-            [
-                "-f", "lavfi",
-                "-i", color_source,
-                "-f", "lavfi",
-                "-i", "anullsrc=r=44100:cl=stereo",
-                "-vf", drawtext_filter,
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-t", str(request.duration_seconds),
-                "-shortest",
-                str(output_path),
-            ],
-        )
+        paths: list[Path] = []
+        for take in range(max(1, request.sample_count)):
+            output_path = (
+                Path(tempfile.gettempdir()) / f"oneinfo-dev-scene-{job_id}-{take}.mp4"
+            )
+            # Takes differ by colour so they are told apart on sight. Veo's
+            # takes differ by content; this is only enough to prove the
+            # picker works.
+            color = _PALETTE[(hash(request.visual_prompt) + take) % len(_PALETTE)]
+            label = request.visual_prompt
+            if request.sample_count > 1:
+                label = f"Take {take + 1} - {label}"
+            text = escape_drawtext(label)
 
-        self._jobs[job_id] = output_path
+            color_source = (
+                f"color=c=0x{color}:s={width}x{height}"
+                f":d={request.duration_seconds}:r={settings.video_fps}"
+            )
+            drawtext_filter = (
+                f"drawtext=text='{text}':fontcolor=white:fontsize=40:"
+                "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.4:boxborderw=20"
+            )
+
+            await run_ffmpeg(
+                settings.ffmpeg_path,
+                [
+                    "-f", "lavfi",
+                    "-i", color_source,
+                    "-f", "lavfi",
+                    "-i", "anullsrc=r=44100:cl=stereo",
+                    "-vf", drawtext_filter,
+                    "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "aac",
+                    "-t", str(request.duration_seconds),
+                    "-shortest",
+                    str(output_path),
+                ],
+            )
+            paths.append(output_path)
+
+        self._jobs[job_id] = paths
         return job_id
 
     async def get_job_status(self, job_id: str) -> VideoJobStatus:
@@ -76,4 +98,7 @@ class DevVideoProvider:
         return VideoJobStatus(status="completed")
 
     async def download_result(self, job_id: str) -> bytes:
-        return self._jobs[job_id].read_bytes()
+        return self._jobs[job_id][0].read_bytes()
+
+    async def download_all_results(self, job_id: str) -> list[bytes]:
+        return [path.read_bytes() for path in self._jobs[job_id]]

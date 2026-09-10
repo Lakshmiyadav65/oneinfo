@@ -21,7 +21,13 @@ type PhaseKey = "queued" | "scenes" | "render" | "done";
  * run — and, once the job completed, tick it as though it had.
  */
 function phasesFor(job: GenerationJob): { key: PhaseKey; label: string }[] {
-  const scenes = job.scene_id ? "Generating the scene" : "Generating scenes";
+  // A stitch-only run generates nothing - it gathers clips that already
+  // exist. Calling that "Generating scenes" would imply it was spending.
+  const scenes = job.stitch_only
+    ? "Collecting your clips"
+    : job.scene_id
+      ? "Generating the scene"
+      : "Generating scenes";
   return [
     { key: "queued", label: "Queued" },
     { key: "scenes", label: scenes },
@@ -58,6 +64,7 @@ function sceneLabel(job: GenerationJob): string | null {
   // Null on jobs that ran before the counters existed. Saying nothing beats
   // reporting "0 of 0 scenes" about a run that plainly rendered some.
   if (!total || doneCount === null) return null;
+  if (job.stitch_only) return `${doneCount} of ${total} clips collected`;
   return `${doneCount} of ${total} scenes rendered`;
 }
 
@@ -75,7 +82,9 @@ export function GenerationProgress({ job }: { job: GenerationJob }) {
         <div className="flex items-baseline justify-between gap-3">
           <p className="text-sm font-medium text-foreground">
             {failed
-              ? "Generation stopped"
+              ? job.stitch_only
+                ? "Combining stopped"
+                : "Generation stopped"
               : job.status === "completed"
                 ? "Video ready"
                 : (job.current_stage ?? "Working…")}

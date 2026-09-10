@@ -11,6 +11,7 @@ from app.models.storyboard import Storyboard
 from app.schemas.storyboard import (
     ProjectEnvironmentIn,
     SceneEnvironmentIn,
+    SceneInclusionIn,
     SceneOnCameraIn,
     SceneVisualIn,
     StoryboardOut,
@@ -50,6 +51,25 @@ async def set_scene_on_camera(
 ) -> Storyboard:
     return await storyboard_service.set_scene_on_camera(
         db, settings, creator.id, project_id, scene_id, payload.features_creator
+    )
+
+
+@router.patch("/scenes/{scene_id}/inclusion", response_model=StoryboardOut)
+async def set_scene_inclusion(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    payload: SceneInclusionIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> Storyboard:
+    """
+    Leaves a scene out of the finished video, or puts it back.
+
+    The scene and any clip it already has are kept, so this is free and
+    reversible in both directions.
+    """
+    return await storyboard_service.set_scene_inclusion(
+        db, creator.id, project_id, scene_id, payload.included_in_video
     )
 
 
