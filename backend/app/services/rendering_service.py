@@ -2,49 +2,40 @@ import tempfile
 from pathlib import Path
 
 from app.core.config import Settings
-from app.providers.ffmpeg_runner import (
-    escape_drawtext,
-    escape_fontfile_path,
-    probe_duration_seconds,
-    run_ffmpeg,
-)
+from app.providers.ffmpeg_runner import probe_duration_seconds, run_ffmpeg
 
 
 async def render_final_video(
-    settings: Settings, scenes: list[tuple[Path, str]]
+    settings: Settings, clips: list[Path]
 ) -> tuple[Path, float]:
     """
-    Normalizes each scene clip to a consistent format, burns its caption in
-    (the spec's "Captions" pipeline stage — applied uniformly here so it
-    works the same whether the clip came from the dev provider or real
-    Veo), then concatenates them into one final MP4.
+    Normalizes each scene clip to a consistent format, then concatenates them
+    into one final MP4.
 
-    `scenes` is [(clip_path, caption), ...] in storyboard order. Returns
+    No burnt-in captions. Every clip used to get its scene caption drawn
+    across the bottom, which put a second line of text over video that is
+    already carrying the spoken line - and the wrong one, since the caption
+    was written in English while the voiceover was not.
+
+    `clips` is the scene files in storyboard order. Returns
     (output_path, duration_seconds).
     """
     work_dir = Path(tempfile.mkdtemp(prefix="oneinfo-render-"))
 
     normalized_paths: list[Path] = []
-    for index, (clip_path, caption) in enumerate(scenes):
+    for index, clip_path in enumerate(clips):
         normalized_path = work_dir / f"scene_{index:03d}.mp4"
-        caption_text = escape_drawtext(caption)
-        # Without an explicit font, drawtext falls back to a Latin-only face
-        # and non-Latin captions (Telugu) render as empty boxes. Set
-        # CAPTION_FONT_PATH to a font covering the script you generate in.
-        font_option = f"fontfile='{escape_fontfile_path(settings.caption_font_path)}':" if settings.caption_font_path else ""
-        scale_and_caption_filter = (
-            f"scale={settings.video_width}:{settings.video_height},fps={settings.video_fps},"
-            # expansion=none: a caption is literal text. With expansion on,
-            # drawtext tries to interpret % and {} inside it and fails the render.
-            f"drawtext={font_option}expansion=none:text='{caption_text}':"
-            "fontcolor=white:fontsize=32:"
-            "x=(w-text_w)/2:y=h-text_h-40:box=1:boxcolor=black@0.6:boxborderw=16"
+        # Still re-encoded to one size, frame rate and audio layout: the
+        # concat below stream-copies, and it produces a broken file if the
+        # parts disagree on any of those.
+        normalize_filter = (
+            f"scale={settings.video_width}:{settings.video_height},fps={settings.video_fps}"
         )
         await run_ffmpeg(
             settings.ffmpeg_path,
             [
                 "-i", str(clip_path),
-                "-vf", scale_and_caption_filter,
+                "-vf", normalize_filter,
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-ar", "44100", "-ac", "2",

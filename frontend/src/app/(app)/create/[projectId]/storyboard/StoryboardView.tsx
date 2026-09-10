@@ -22,6 +22,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
+import { cn } from "@/lib/utils/cn";
 
 // Veo bills per second, and an on-camera scene runs on a pricier model
 // than b-roll. Surfaced per scene because the toggle below is the main
@@ -214,14 +215,15 @@ export function StoryboardView({ projectId }: { projectId: string }) {
       {storyboard && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Badge variant={storyboard.qa_passed ? "success" : "destructive"}>
-                {storyboard.qa_passed ? "QA Passed" : "QA Issues Found"}
-              </Badge>
-              <span className="text-xs text-muted-foreground">
-                Estimated {storyboardCost(storyboard)} to generate
-              </span>
-            </div>
+            {/*
+              No "QA Passed" badge. A green tick on every healthy storyboard
+              is noise on the pass, which is nearly always; the issues panel
+              below still speaks up on the rare fail, which is the only time
+              it has anything to say.
+            */}
+            <span className="text-xs text-muted-foreground">
+              Estimated {storyboardCost(storyboard)} to generate
+            </span>
             <Button variant="secondary" size="sm" onClick={handleGenerate} isLoading={isGenerating}>
               Regenerate Storyboard
             </Button>
@@ -257,27 +259,55 @@ export function StoryboardView({ projectId }: { projectId: string }) {
                       {sceneCost(scene.duration_seconds, scene.features_creator)}
                     </p>
                   </div>
-                  <p className="text-sm text-foreground">{scene.voiceover}</p>
+                  {/*
+                    The spoken line leads the card. It is the one thing on a
+                    scene the creator is really judging - what the person on
+                    screen actually says - so it is set as speech rather than
+                    left level with the prompt text describing the picture.
+                  */}
+                  <div className="space-y-1">
+                    <span className="inline-flex rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                      Dialogue
+                    </span>
+                    <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm leading-relaxed text-foreground">
+                      {scene.voiceover}
+                    </p>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     Visual: {scene.visual_prompt}
                   </p>
-                  <p className="text-xs text-muted-foreground">Caption: {scene.caption}</p>
-                  <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                  {/*
+                    The costliest decision on the page, so it is given the
+                    weight of one. As a muted checkbox it read like a footnote
+                    while being the difference between a b-roll scene and one
+                    charged at three times the rate.
+                  */}
+                  <label
+                    className={cn(
+                      "flex cursor-pointer flex-wrap items-center gap-2 rounded-md border p-3 text-sm transition-colors",
+                      scene.features_creator
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border text-foreground hover:border-ring hover:bg-muted/50",
+                      !canGoOnCamera && "cursor-not-allowed opacity-60"
+                    )}
+                  >
                     <input
                       type="checkbox"
-                      className="h-3.5 w-3.5"
+                      className="size-4 shrink-0 accent-[var(--primary)]"
                       checked={scene.features_creator}
                       disabled={togglingId === scene.id || !canGoOnCamera}
                       onChange={(event) =>
                         void handleToggleOnCamera(scene.id, event.target.checked)
                       }
                     />
-                    {canGoOnCamera
-                      ? `Put me on camera in this scene${scene.features_creator ? "" : " (becomes 8s)"}`
-                      : "Put me on camera (add a photo in Settings first)"}
-                    {!scene.features_creator && (
-                      <span className="text-muted-foreground/70">
-                        (+{onCameraSurcharge(scene.duration_seconds)})
+                    <span className="font-medium">
+                      {canGoOnCamera
+                        ? "Put me on camera in this scene"
+                        : "Put me on camera (add a photo first)"}
+                    </span>
+                    {canGoOnCamera && !scene.features_creator && (
+                      <span className="text-xs text-muted-foreground">
+                        becomes 8s &middot; +{onCameraSurcharge(scene.duration_seconds)}
                       </span>
                     )}
                   </label>

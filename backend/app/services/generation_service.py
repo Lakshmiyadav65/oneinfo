@@ -277,7 +277,7 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     db, settings, project.creator_id
                 )
 
-            render_inputs: list[tuple[Path, str]] = []
+            render_inputs: list[Path] = []
             for index, scene in enumerate(scenes, start=1):
                 job.current_stage = (
                     "Generating your scene"
@@ -317,7 +317,7 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                         duration_seconds=scene_duration,
                     )
                 )
-                render_inputs.append((local_path, scene.caption))
+                render_inputs.append(local_path)
                 job.scenes_completed = index
                 await db.commit()
 

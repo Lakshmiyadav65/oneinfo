@@ -7,11 +7,11 @@ from app.providers.video.dev_provider import DevVideoProvider
 from app.services.rendering_service import render_final_video
 
 
-async def test_render_final_video_concatenates_and_captions(requires_ffmpeg):
+async def test_render_final_video_concatenates_the_scene_clips(requires_ffmpeg):
     settings = get_settings()
     provider = DevVideoProvider(settings)
 
-    scenes: list[tuple[Path, str]] = []
+    clips: list[Path] = []
     for index, prompt in enumerate(["Scene one visual", "Scene two visual"]):
         job_id = await provider.create_video_job(
             VideoGenerationRequest(visual_prompt=prompt, duration_seconds=2)
@@ -19,10 +19,10 @@ async def test_render_final_video_concatenates_and_captions(requires_ffmpeg):
         video_bytes = await provider.download_result(job_id)
         path = Path(tempfile.gettempdir()) / f"test-render-scene-{index}.mp4"
         path.write_bytes(video_bytes)
-        scenes.append((path, f"Caption {index}"))
+        clips.append(path)
 
     try:
-        output_path, duration = await render_final_video(settings, scenes)
+        output_path, duration = await render_final_video(settings, clips)
         try:
             assert output_path.exists()
             assert output_path.stat().st_size > 0
@@ -30,5 +30,5 @@ async def test_render_final_video_concatenates_and_captions(requires_ffmpeg):
         finally:
             output_path.unlink(missing_ok=True)
     finally:
-        for path, _ in scenes:
+        for path in clips:
             path.unlink(missing_ok=True)
