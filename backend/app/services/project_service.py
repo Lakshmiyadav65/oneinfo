@@ -12,12 +12,14 @@ async def create_project(
     creator_id: str,
     idea: str,
     title: str | None,
-    language: str = "english",
+    language: str | None = None,
 ) -> Project:
     # A truncated idea is a placeholder, not a title. It stands in until the
     # research agent runs during hook generation and can name the thing
     # properly — see hook_service.
     chosen_title = (title or "").strip()
+    if language is None:
+        language = await _last_used_language(db, creator_id)
     project = Project(
         creator_id=creator_id,
         title=chosen_title or idea.strip()[:80],
@@ -30,6 +32,25 @@ async def create_project(
     await db.commit()
     await db.refresh(project)
     return project
+
+
+async def _last_used_language(db: AsyncSession, creator_id: str) -> str:
+    """
+    The language of this creator's most recent project.
+
+    Nothing asks for a language when a project is created any more — the
+    picker lives in the workflow header — so a hardcoded "english" here
+    quietly reset a Tenglish creator on every new project and made them
+    change it again by hand. Their last project is the better guess; the
+    fallback only applies to someone's very first one.
+    """
+    result = await db.execute(
+        select(Project.language)
+        .where(Project.creator_id == creator_id)
+        .order_by(Project.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none() or "english"
 
 
 async def list_projects(db: AsyncSession, creator_id: str) -> list[Project]:

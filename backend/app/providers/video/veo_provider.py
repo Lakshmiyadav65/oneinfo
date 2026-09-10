@@ -74,7 +74,10 @@ class VeoVideoProvider:
 
     async def create_video_job(self, request: VideoGenerationRequest) -> str:
         instance: dict = {"prompt": request.visual_prompt}
-        parameters: dict = {"durationSeconds": request.duration_seconds}
+        parameters: dict = {
+            "durationSeconds": request.duration_seconds,
+            "aspectRatio": request.aspect_ratio,
+        }
 
         # Only a request that actually carries a face goes to the reference
         # model: it costs three times the Lite tier per second, and Lite

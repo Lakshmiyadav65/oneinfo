@@ -143,3 +143,65 @@ def test_the_setup_carries_no_on_camera_flag_of_its_own():
     with it, and the disagreement would be about money.
     """
     assert "on_camera" not in SceneEnvironment.model_fields
+
+
+def test_dialogue_reaches_the_prompt_verbatim():
+    """
+    The bug this guards: Veo was only ever sent visual_prompt, so it invented
+    English dialogue for a Tenglish project. The voiceover has to arrive
+    unedited, or the video speaks a language nobody chose.
+    """
+    line = "Bro... August 2nd na Infosys exam! Ee video end varuku chudu."
+    prompt = compose_visual_prompt(
+        SceneEnvironment(),
+        action="walking through campus",
+        features_creator=True,
+        dialogue=line,
+        language="tenglish",
+    )
+
+    assert f'"{line}"' in prompt
+    assert "DIALOGUE:" in prompt
+    # Naming the language is not enough on its own - Veo will render a Telugu
+    # line's meaning in English unless told outright not to.
+    assert "Telugu" in prompt
+    assert "Do not translate it" in prompt
+
+
+def test_captions_are_suppressed_on_every_scene():
+    """Burnt-in text cannot be removed after generation, so this one is not
+    optional and does not depend on any creator setting."""
+    prompt = compose_visual_prompt(
+        SceneEnvironment(), action="talking", features_creator=False
+    )
+    assert "No subtitles" in prompt
+    assert "No captions" in prompt
+
+
+def test_continuity_is_stated_only_for_a_multi_clip_video():
+    environment = SceneEnvironment()
+    across = compose_visual_prompt(
+        environment,
+        action="talking",
+        features_creator=False,
+        scene_number=2,
+        scene_count=5,
+    )
+    assert "clip 2 of 5" in across
+    assert "same outfit" in across
+
+    alone = compose_visual_prompt(
+        environment,
+        action="talking",
+        features_creator=False,
+        scene_number=1,
+        scene_count=1,
+    )
+    assert "clip 1 of 1" not in alone
+
+
+def test_aspect_line_follows_the_size_we_actually_render():
+    from app.agents.environment_prompt import aspect_ratio_label
+
+    assert aspect_ratio_label(1080, 1920).startswith("9:16")
+    assert aspect_ratio_label(1280, 720).startswith("16:9")

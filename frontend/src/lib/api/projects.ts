@@ -24,8 +24,11 @@ export async function getProject(projectId: string): Promise<Project | null> {
 export async function createProject(
   idea: string,
   title?: string,
-  language: ProjectLanguage = "english"
+  language?: ProjectLanguage
 ): Promise<Project> {
+  // Language omitted rather than defaulted, the same way suggestIdeas does
+  // it: the create screen no longer asks, and defaulting to "english" here
+  // overrode the server's carry-over from the creator's last project.
   return api.post<Project>("/projects", { idea, title: title || undefined, language });
 }
 

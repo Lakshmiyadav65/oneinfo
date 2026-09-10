@@ -1,13 +1,13 @@
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.agents.environment_prompt import compose_visual_prompt
+from app.agents.environment_prompt import aspect_ratio_label, compose_visual_prompt
 from app.agents.qa_agent import run_qa_agent
 from app.agents.storyboard_agent import run_storyboard_agent
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.core.errors import NotFoundError, ValidationAppError
 from app.models.creator import Creator
 from app.models.project import Project, ProjectStatus
@@ -76,12 +76,31 @@ async def _rebuild_visual(
     check belongs to the caller, which knows whether the creator was asked.
     """
     creator = await db.get(Creator, creator_id)
+    settings = get_settings()
+
+    # The language and the scene's position both belong in the prompt, and
+    # neither is on the scene itself. These paths run when a creator edits a
+    # setup, not inside the generation loop, so the extra reads are cheap.
+    storyboard = await db.get(Storyboard, scene.storyboard_id)
+    project = await db.get(Project, storyboard.project_id) if storyboard else None
+    result = await db.execute(
+        select(func.count())
+        .select_from(StoryboardScene)
+        .where(StoryboardScene.storyboard_id == scene.storyboard_id)
+    )
+    scene_count = result.scalar_one()
+
     scene.visual_prompt = compose_visual_prompt(
         scene_environment(scene),
         action=scene.visual_action or "",
         features_creator=scene.features_creator,
         appearance_description=creator.appearance_description if creator else None,
         voice_description=creator.voice_description if creator else None,
+        dialogue=scene.voiceover,
+        language=project.language if project else "english",
+        aspect_ratio=aspect_ratio_label(settings.video_width, settings.video_height),
+        scene_number=scene.order,
+        scene_count=scene_count,
     )
 
 
@@ -206,6 +225,13 @@ async def generate_storyboard(
                     features_creator=scene.features_creator,
                     appearance_description=creator.appearance_description if creator else None,
                     voice_description=creator.voice_description if creator else None,
+                    dialogue=scene.voiceover,
+                    language=project.language,
+                    aspect_ratio=aspect_ratio_label(
+                        settings.video_width, settings.video_height
+                    ),
+                    scene_number=scene.order,
+                    scene_count=len(output.scenes),
                 ),
                 environment=default_environment.model_dump(mode="json"),
                 caption=scene.caption,
