@@ -14,6 +14,7 @@ import {
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { GenerationProgress } from "@/components/create/GenerationProgress";
 import { ClipGrid } from "@/components/create/ClipGrid";
+import { GenerateDialog } from "@/components/create/GenerateDialog";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -62,6 +63,9 @@ export function GenerateView({ projectId }: { projectId: string }) {
   const storyboard = useAsyncData(() => getStoryboard(projectId), [projectId]);
   const [job, setJob] = useState<GenerationJob | null | undefined>(undefined);
   const [isStarting, setIsStarting] = useState(false);
+  // Asked at the point of spending rather than on arrival. Every button that
+  // starts a paid run opens this first.
+  const [askingSettings, setAskingSettings] = useState(false);
   const [output, setOutput] = useState<VideoOutput | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -170,6 +174,18 @@ export function GenerateView({ projectId }: { projectId: string }) {
     <div className="space-y-6">
       <WorkflowHeader project={project.data} activeStep="generate" />
 
+      <GenerateDialog
+        open={askingSettings}
+        onOpenChange={setAskingSettings}
+        projectId={projectId}
+        output={project.data.output_settings}
+        storyboard={storyboard.status === "success" ? storyboard.data : null}
+        onConfirmed={async () => {
+          project.retry();
+          await handleStart();
+        }}
+      />
+
       {job === undefined && <Skeleton className="h-24 w-full" />}
 
       {job === null && (
@@ -182,7 +198,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
                 video. Nothing has been generated for this project yet.
               </p>
             </div>
-            <Button onClick={handleStart} isLoading={isStarting}>
+            <Button onClick={() => setAskingSettings(true)} isLoading={isStarting}>
               Generate Video
             </Button>
           </CardContent>
@@ -218,7 +234,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={handleStart}
+                  onClick={() => setAskingSettings(true)}
                   isLoading={isStarting}
                 >
                   Try again
@@ -240,7 +256,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
                   generated.
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={handleStart} isLoading={isStarting}>
+                  <Button onClick={() => setAskingSettings(true)} isLoading={isStarting}>
                     Generate the full video
                   </Button>
                   <Button variant="secondary" asChild>
@@ -261,7 +277,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={handleStart}
+                        onClick={() => setAskingSettings(true)}
                         isLoading={isStarting}
                       >
                         Regenerate

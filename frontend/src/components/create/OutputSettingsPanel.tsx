@@ -90,12 +90,15 @@ export function OutputSettingsPanel({
   output,
   storyboard,
   disabled = false,
+  showTotal = true,
   onChange,
 }: {
   output: OutputSettings;
   /** Priced against this. Null before one exists, which hides the numbers. */
   storyboard: Storyboard | null;
   disabled?: boolean;
+  /** Off where the caller already shows the price of the action itself. */
+  showTotal?: boolean;
   onChange: (output: OutputSettings) => void;
 }) {
   // Each option is priced by asking what the whole storyboard would cost
@@ -162,13 +165,20 @@ export function OutputSettingsPanel({
         />
       </div>
 
-      {storyboard && (
+      {storyboard && showTotal && (
         <p className="text-xs text-muted-foreground">
           <span className="font-medium text-foreground">
             Estimated {storyboardCost(storyboard, output)} to generate
           </span>{" "}
           — a forecast from list prices, not a quote. Your Google Cloud bill is
           the authority.
+        </p>
+      )}
+
+      {!showTotal && (
+        <p className="text-xs text-muted-foreground">
+          Prices are a forecast from list prices, not a quote. Your Google Cloud
+          bill is the authority.
         </p>
       )}
 

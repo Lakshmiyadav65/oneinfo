@@ -45,6 +45,8 @@ export function SceneCard({
   scene,
   canGoOnCamera,
   output,
+  storyboard,
+  onRegenerated,
   onUpdated,
 }: {
   projectId: string;
@@ -52,6 +54,10 @@ export function SceneCard({
   canGoOnCamera: boolean;
   /** Prices this scene: tier, resolution and take count all scale it. */
   output: OutputSettings;
+  /** Prices the settings dialog's options against the whole video. */
+  storyboard: Storyboard;
+  /** The settings changed, so the project needs re-reading. */
+  onRegenerated: () => void;
   onUpdated: (storyboard: Storyboard) => void;
 }) {
   const { toast } = useToast();
@@ -259,8 +265,10 @@ export function SceneCard({
 
         <ScenePreview
           projectId={projectId}
-          sceneId={scene.id}
-          cost={sceneCost(scene.duration_seconds, scene.features_creator, output)}
+          scene={scene}
+          output={output}
+          storyboard={storyboard}
+          onSettingsSaved={onRegenerated}
         />
       </CardContent>
     </Card>

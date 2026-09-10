@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { generateScene, getGenerationStatus, getSceneClip } from "@/lib/api/generation";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { GenerateDialog } from "@/components/create/GenerateDialog";
+import { sceneCost } from "@/lib/workflow/scene-cost";
+import type { OutputSettings } from "@/types/output-settings";
+import type { Storyboard, StoryboardScene } from "@/types/storyboard";
 
 /**
  * Renders one scene on its own and plays it back.
@@ -15,14 +19,23 @@ import { useToast } from "@/components/ui/Toast";
  */
 export function ScenePreview({
   projectId,
-  sceneId,
-  cost,
+  scene,
+  output,
+  storyboard,
+  onSettingsSaved,
 }: {
   projectId: string;
-  sceneId: string;
-  cost: string;
+  scene: StoryboardScene;
+  output: OutputSettings;
+  storyboard: Storyboard;
+  /** The dialog saved new settings, so the project needs re-reading. */
+  onSettingsSaved: () => void;
 }) {
+  const sceneId = scene.id;
   const { toast } = useToast();
+  // The settings are asked here rather than on arrival: they only matter at
+  // the moment of spending, and this button is that moment.
+  const [askingSettings, setAskingSettings] = useState(false);
   const [running, setRunning] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [clipUrl, setClipUrl] = useState<string | null>(null);
@@ -79,18 +92,33 @@ export function ScenePreview({
 
   return (
     <div className="space-y-2 pt-1">
+      <GenerateDialog
+        open={askingSettings}
+        onOpenChange={setAskingSettings}
+        projectId={projectId}
+        output={output}
+        storyboard={storyboard}
+        scene={scene}
+        onConfirmed={async () => {
+          onSettingsSaved();
+          await handleGenerate();
+        }}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="secondary"
           size="sm"
           isLoading={running}
           disabled={running}
-          onClick={() => void handleGenerate()}
+          onClick={() => setAskingSettings(true)}
         >
           {clipUrl ? "Regenerate this scene" : "Generate this scene"}
         </Button>
         <span className="text-xs text-muted-foreground">
-          {running ? (stage ?? "Working…") : `Just this scene — ${cost}`}
+          {running
+            ? (stage ?? "Working…")
+            : `Just this scene — ${sceneCost(scene.duration_seconds, scene.features_creator, output)}`}
         </span>
       </div>
 

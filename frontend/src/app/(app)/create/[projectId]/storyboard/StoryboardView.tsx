@@ -11,9 +11,6 @@ import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
 import { EnvironmentSetup } from "@/components/create/EnvironmentSetup";
 import { SceneCard } from "@/components/create/SceneCard";
 import { storyboardCost } from "@/lib/workflow/scene-cost";
-import { OutputSettingsPanel } from "@/components/create/OutputSettingsPanel";
-import { setOutputSettings } from "@/lib/api/projects";
-import type { OutputSettings } from "@/types/output-settings";
 import type { EnvironmentPreset, SceneEnvironment } from "@/types/environment";
 import type { Storyboard } from "@/types/storyboard";
 import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
@@ -90,23 +87,6 @@ export function StoryboardView({ projectId }: { projectId: string }) {
     resetToPreset: boolean;
   } | null>(null);
   const [savingDefault, setSavingDefault] = useState(false);
-  const [savingOutput, setSavingOutput] = useState(false);
-
-  async function saveOutput(output: OutputSettings) {
-    setSavingOutput(true);
-    try {
-      await setOutputSettings(projectId, output);
-      project.retry();
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: "Couldn't save the output settings",
-        description: errorDescription(err),
-      });
-    } finally {
-      setSavingOutput(false);
-    }
-  }
 
   async function saveDefault(
     environment: SceneEnvironment,
@@ -259,21 +239,6 @@ export function StoryboardView({ projectId }: { projectId: string }) {
 
           <CreatorFacePrompt onChange={() => faceQuery.retry()} />
 
-          {/*
-            Above the setup panel, not below it: shape and resolution decide
-            what the scenes are framed for, so choosing them after building
-            every scene is the wrong order to be asked in.
-          */}
-          <Card>
-            <CardContent className="p-4">
-              <OutputSettingsPanel
-                output={projectData.output_settings}
-                storyboard={storyboard}
-                disabled={savingOutput}
-                onChange={(output) => void saveOutput(output)}
-              />
-            </CardContent>
-          </Card>
 
           {/*
             The project default, so a creator picks a look once rather than
@@ -351,6 +316,8 @@ export function StoryboardView({ projectId }: { projectId: string }) {
                 scene={scene}
                 canGoOnCamera={canGoOnCamera}
                 output={projectData.output_settings}
+                storyboard={storyboard}
+                onRegenerated={() => project.retry()}
                 onUpdated={setOverride}
               />
             ))}
