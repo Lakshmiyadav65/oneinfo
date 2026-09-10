@@ -24,15 +24,21 @@ import type { GenerationJob } from "@/types/generation";
 export function CombineClips({
   projectId,
   disabled = false,
+  refreshToken = 0,
   onStarted,
 }: {
   projectId: string;
   disabled?: boolean;
+  /** Bumped when scenes move in or out of the cut, to re-ask readiness. */
+  refreshToken?: number;
   /** Handed the started job, so the caller's poller can pick it straight up. */
   onStarted: (job: GenerationJob) => void;
 }) {
   const { toast } = useToast();
-  const readiness = useAsyncData(() => getStitchReadiness(projectId), [projectId]);
+  const readiness = useAsyncData(
+    () => getStitchReadiness(projectId),
+    [projectId, refreshToken]
+  );
   const [busy, setBusy] = useState(false);
 
   if (readiness.status !== "success") return null;

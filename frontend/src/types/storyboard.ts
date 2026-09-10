@@ -15,6 +15,8 @@ export type StoryboardScene = {
   visual_is_custom: boolean;
   /** Which take the final video uses, when a run produced several. */
   selected_take: number;
+  /** False for a scene the creator has left out of this cut. */
+  included_in_video: boolean;
 };
 
 export type Storyboard = {

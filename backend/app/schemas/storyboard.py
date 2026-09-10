@@ -21,6 +21,8 @@ class StoryboardSceneOut(BaseModel):
     environment: SceneEnvironment
     # Which take the final video uses. Zero-based.
     selected_take: int = 0
+    # False for a scene the creator has left out of this cut.
+    included_in_video: bool = True
     # True once the creator has edited the visual description by hand, which
     # is what stops a change of setup from quietly rewriting their words.
     visual_is_custom: bool
@@ -44,6 +46,13 @@ class StoryboardOut(BaseModel):
 
 class SceneOnCameraIn(BaseModel):
     features_creator: bool
+
+
+class SceneInclusionIn(BaseModel):
+    """Whether this scene goes into the finished video. The scene itself is
+    kept either way - see storyboard_service.set_scene_inclusion."""
+
+    included_in_video: bool
 
 
 class SceneEnvironmentIn(BaseModel):

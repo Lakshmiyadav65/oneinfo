@@ -68,6 +68,9 @@ export function GenerateView({ projectId }: { projectId: string }) {
   // Asked at the point of spending rather than on arrival. Every button that
   // starts a paid run opens this first.
   const [askingSettings, setAskingSettings] = useState(false);
+  // Bumped when a scene moves in or out of the cut, so the combine card
+  // re-asks whether the video can be built from what is on hand.
+  const [cutVersion, setCutVersion] = useState(0);
   const [output, setOutput] = useState<VideoOutput | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -209,6 +212,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
         <CombineClips
           projectId={projectId}
           disabled={isStarting}
+          refreshToken={cutVersion}
           onStarted={(started) => {
             // Same reset as starting a paid run: the previous finished
             // video is about to be replaced, so it must stop being shown
@@ -249,6 +253,10 @@ export function GenerateView({ projectId }: { projectId: string }) {
                 scenes={storyboard.data.scenes}
                 job={job}
                 aspectRatio={project.data.output_settings.aspect_ratio}
+                onInclusionChanged={() => {
+                  setCutVersion((n) => n + 1);
+                  storyboard.retry();
+                }}
               />
             )}
 

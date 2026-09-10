@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/components/ui/Toast";
 import {
   setSceneEnvironment,
+  setSceneInclusion,
   setSceneOnCamera,
   setSceneVisual,
 } from "@/lib/api/storyboard";
@@ -103,6 +104,13 @@ export function SceneCard({
     );
   }
 
+  async function setIncluded(included: boolean) {
+    await run(
+      () => setSceneInclusion(projectId, scene.id, included),
+      included ? "Couldn't put this scene back" : "Couldn't leave this scene out"
+    );
+  }
+
   async function saveVisual() {
     await run(
       () => setSceneVisual(projectId, scene.id, visualDraft),
@@ -122,10 +130,18 @@ export function SceneCard({
     >
       <CardContent className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold tabular-nums text-primary">
+          <span
+            className={cn(
+              "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums",
+              scene.included_in_video
+                ? "bg-primary/15 text-primary"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
             {scene.order}
           </span>
           {scene.features_creator && <Badge variant="info">You on camera</Badge>}
+          {!scene.included_in_video && <Badge variant="default">Left out</Badge>}
           <span className="ml-auto flex items-center gap-2 text-xs tabular-nums text-muted-foreground">
             <span className="rounded-md bg-muted px-1.5 py-0.5">
               {scene.duration_seconds}s
@@ -276,6 +292,28 @@ export function SceneCard({
               becomes 8s &middot; +{onCameraSurcharge(scene.duration_seconds, output)}
             </span>
           )}
+        </label>
+
+        {/*
+          Offered here as well as on the generate grid, because here it is
+          worth money: a scene dropped before the run is a scene nobody pays
+          to make. The clip and the scene are kept either way.
+        */}
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={scene.included_in_video}
+            disabled={busy}
+            onChange={(e) => void setIncluded(e.target.checked)}
+            className="size-4 accent-[var(--primary)]"
+          />
+          <span
+            className={
+              scene.included_in_video ? "text-foreground" : "text-muted-foreground"
+            }
+          >
+            Include this scene in the video
+          </span>
         </label>
 
         <ScenePreview

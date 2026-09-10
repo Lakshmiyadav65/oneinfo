@@ -61,11 +61,16 @@ export function onCameraSurcharge(
 }
 
 function totalRupees(scenes: StoryboardScene[], output: OutputSettings): number {
+  // Excluded scenes are never generated, so they must never be priced.
+  // A total that charged for shots the creator had already dropped would
+  // make leaving one out look like it saved nothing.
   return (
-    scenes.reduce(
-      (sum, scene) => sum + scene.duration_seconds * sceneRate(scene.features_creator, output),
-      0
-    ) * output.takes
+    scenes
+      .filter((scene) => scene.included_in_video)
+      .reduce(
+        (sum, scene) => sum + scene.duration_seconds * sceneRate(scene.features_creator, output),
+        0
+      ) * output.takes
   );
 }
 

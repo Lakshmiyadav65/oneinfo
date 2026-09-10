@@ -101,12 +101,21 @@ async def start_generation(
     if storyboard is None or not storyboard.scenes:
         raise ValidationAppError("Generate a storyboard before starting video generation.")
 
-    # A single-scene job validates and bills only that scene.
-    target_scenes = storyboard.scenes
+    # Excluded scenes are not generated at all. Paying to make a clip the
+    # creator has already decided to leave out is the exact waste this flag
+    # exists to prevent. A single-scene preview is exempt: asking for one
+    # scene by name is a deliberate act, and it is how someone decides
+    # whether to put an excluded scene back.
+    target_scenes = [s for s in storyboard.scenes if s.included_in_video]
     if scene_id is not None:
         target_scenes = [s for s in storyboard.scenes if s.id == scene_id]
         if not target_scenes:
             raise NotFoundError("No such scene in this storyboard.")
+    elif not target_scenes:
+        raise ValidationAppError(
+            "Every scene has been left out of this video, so there is nothing to "
+            "generate. Put at least one back in."
+        )
 
     # Check every scene up front. Scenes are generated one at a time and
     # each finished one is billed, so a storyboard the provider will reject
@@ -212,7 +221,10 @@ async def get_stitch_readiness(
 
     ready = 0
     missing: list[int] = []
-    for scene in sorted(storyboard.scenes, key=lambda s: s.order):
+    # Only scenes actually in the cut. A scene the creator left out must not
+    # hold the Combine button hostage by counting as missing.
+    included = [s for s in storyboard.scenes if s.included_in_video]
+    for scene in sorted(included, key=lambda s: s.order):
         if await _existing_clip(db, scene) is not None:
             ready += 1
         else:
@@ -485,13 +497,24 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 .options(selectinload(Storyboard.scenes))
             )
             storyboard = result.scalar_one()
-            scenes = sorted(storyboard.scenes, key=lambda s: s.order)
+            scenes = sorted(
+                (s for s in storyboard.scenes if s.included_in_video),
+                key=lambda s: s.order,
+            )
             # A single-scene job renders that scene alone and stops there.
             single_scene = job.scene_id is not None
             if single_scene:
-                scenes = [s for s in scenes if s.id == job.scene_id]
+                # From the whole storyboard, not the filtered list: previewing
+                # one scene by name is how a creator decides whether to put an
+                # excluded scene back, so exclusion must not block it.
+                scenes = [s for s in storyboard.scenes if s.id == job.scene_id]
                 if not scenes:
                     raise GenerationError("That scene is no longer in the storyboard.")
+            elif not scenes:
+                raise GenerationError(
+                    "Every scene has been left out of this video, so there is "
+                    "nothing to render. Put at least one back in."
+                )
 
             # Set before the first (billable) request goes out, so the UI can
             # show real progress from the moment the run starts rather than an

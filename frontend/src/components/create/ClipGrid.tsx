@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Download, Film } from "lucide-react";
+import { setSceneInclusion } from "@/lib/api/storyboard";
 import { getSceneClip, getSceneTakes, selectSceneTake } from "@/lib/api/generation";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -42,12 +43,14 @@ function ClipTile({
   index,
   state,
   aspectRatio,
+  onInclusionChanged,
 }: {
   projectId: string;
   scene: StoryboardScene;
   index: number;
   state: ClipState;
   aspectRatio: AspectRatio;
+  onInclusionChanged: () => void;
 }) {
   const { toast } = useToast();
   const [clipUrl, setClipUrl] = useState<string | null>(null);
@@ -92,6 +95,26 @@ function ClipTile({
     };
   }, [projectId, scene.id, state]);
 
+  const [included, setIncluded] = useState(scene.included_in_video);
+
+  async function toggleIncluded() {
+    const next = !included;
+    // Switched immediately. Leaving a scene out costs nothing and keeps the
+    // clip, so waiting on a round trip to see the tile dim is pure friction.
+    setIncluded(next);
+    try {
+      await setSceneInclusion(projectId, scene.id, next);
+      onInclusionChanged();
+    } catch (err) {
+      setIncluded(!next);
+      toast({
+        variant: "destructive",
+        title: "Couldn't change that",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  }
+
   async function chooseTake(next: number) {
     const previous = take;
     // Switched immediately: picking a take is free and reversible, so making
@@ -125,7 +148,8 @@ function ClipTile({
           : state === "failed"
             ? "border-destructive/40 bg-destructive/5"
             : "border-border",
-        state === "waiting" && "opacity-60"
+        state === "waiting" && "opacity-60",
+        !included && "opacity-50 saturate-0"
       )}
     >
       <div className="flex items-center justify-between gap-2">
@@ -202,6 +226,24 @@ function ClipTile({
       </p>
 
       {/*
+        The creator's cut. A scene left out keeps its clip and can be put
+        straight back, which is why this is a toggle rather than a delete:
+        dropping a shot from this video is not the same as deciding it was
+        never worth making, and it may well have been paid for.
+      */}
+      <label className="flex cursor-pointer items-center gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={included}
+          onChange={() => void toggleIncluded()}
+          className="size-3.5 accent-[var(--primary)]"
+        />
+        <span className={included ? "text-foreground" : "text-muted-foreground"}>
+          {included ? "In the video" : "Left out"}
+        </span>
+      </label>
+
+      {/*
         Per clip, not only for the finished video. A creator who wants one
         shot for something else should not have to re-cut the whole export.
       */}
@@ -224,11 +266,14 @@ export function ClipGrid({
   scenes,
   job,
   aspectRatio,
+  onInclusionChanged,
 }: {
   projectId: string;
   scenes: StoryboardScene[];
   job: GenerationJob;
   aspectRatio: AspectRatio;
+  /** A scene moved in or out of the cut, so the combine card must recheck. */
+  onInclusionChanged: () => void;
 }) {
   // A single-scene preview is one clip, and it is shown on the storyboard
   // step beside the scene it came from. A grid of one, with the rest greyed
@@ -245,6 +290,7 @@ export function ClipGrid({
           index={index}
           state={stateOf(index, job)}
           aspectRatio={aspectRatio}
+          onInclusionChanged={onInclusionChanged}
         />
       ))}
     </div>

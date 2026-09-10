@@ -410,3 +410,43 @@ async def set_project_environment(
     await db.commit()
     await db.refresh(project)
     return project
+
+
+async def set_scene_inclusion(
+    db: AsyncSession,
+    creator_id: str,
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    included: bool,
+) -> Storyboard:
+    """
+    Leaves a scene out of the finished video, or puts it back.
+
+    The scene is kept either way. Deleting it would throw away a clip the
+    creator may already have paid to generate, and the usual reason to drop
+    a shot is that this cut does not need it - not that it was never worth
+    making.
+
+    The last remaining scene cannot be excluded: a video with no scenes in
+    it is not something to let someone build by accident.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    storyboard = await get_storyboard(db, creator_id, project_id)
+
+    scene = next((s for s in storyboard.scenes if s.id == scene_id), None)
+    if scene is None:
+        raise NotFoundError("No such scene in this storyboard.")
+
+    if not included:
+        remaining = [
+            s for s in storyboard.scenes if s.included_in_video and s.id != scene_id
+        ]
+        if not remaining:
+            raise ValidationAppError(
+                "This is the only scene left in the video. Leave at least one in."
+            )
+
+    scene.included_in_video = included
+    await db.commit()
+    return await get_storyboard(db, creator_id, project_id)
+

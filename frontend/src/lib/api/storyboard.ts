@@ -64,3 +64,19 @@ export async function setSceneVisual(
     { visual_prompt: visualPrompt }
   );
 }
+
+/**
+ * Leaves a scene out of the finished video, or puts it back. The scene and
+ * any clip it already has are kept, so this is free and reversible.
+ */
+export function setSceneInclusion(
+  projectId: string,
+  sceneId: string,
+  includedInVideo: boolean
+): Promise<Storyboard> {
+  return api.patch<Storyboard>(
+    `/projects/${projectId}/storyboard/scenes/${sceneId}/inclusion`,
+    { included_in_video: includedInVideo }
+  );
+}
+
