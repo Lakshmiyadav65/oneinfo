@@ -225,6 +225,30 @@ export function GenerateView({ projectId }: { projectId: string }) {
         />
       )}
 
+      {/*
+        Always shown once there is a storyboard, whatever the last job was.
+        Which clips a project has is a fact about the project - hiding the
+        grid because the most recent run happened to be a single-scene
+        preview left the creator with no way to see or choose anything.
+      */}
+      {storyboard.status === "success" && storyboard.data && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Your clips
+          </p>
+          <ClipGrid
+            projectId={projectId}
+            scenes={storyboard.data.scenes}
+            job={job ?? null}
+            aspectRatio={project.data.output_settings.aspect_ratio}
+            onInclusionChanged={() => {
+              setCutVersion((n) => n + 1);
+              storyboard.retry();
+            }}
+          />
+        </div>
+      )}
+
       {job === null && (
         <Card>
           <CardContent className="flex flex-col items-start gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
@@ -247,18 +271,6 @@ export function GenerateView({ projectId }: { projectId: string }) {
           <CardContent className="space-y-5 p-6">
             <GenerationProgress job={job} />
 
-            {storyboard.status === "success" && storyboard.data && (
-              <ClipGrid
-                projectId={projectId}
-                scenes={storyboard.data.scenes}
-                job={job}
-                aspectRatio={project.data.output_settings.aspect_ratio}
-                onInclusionChanged={() => {
-                  setCutVersion((n) => n + 1);
-                  storyboard.retry();
-                }}
-              />
-            )}
 
             {job.status === "failed" && (
               <div className="space-y-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">

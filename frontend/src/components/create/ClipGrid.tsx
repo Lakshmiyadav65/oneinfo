@@ -12,49 +12,59 @@ import type { StoryboardScene } from "@/types/storyboard";
 import type { AspectRatio } from "@/types/output-settings";
 
 /**
- * Every clip in the video, as tiles, while the run is happening.
+ * Every clip in the video, as tiles: what exists, what is being made, and
+ * which ones go into the finished cut.
  *
- * A single progress bar answers "how long left" and nothing else. Generation
- * is clip by clip and each finished clip is already paid for, so the useful
- * question during a run is which clip is being made now and whether the ones
- * already done are any good. A creator who can see clip two came out wrong
- * can stop the run instead of paying for four more.
+ * Whether a clip exists is asked of the server per scene, never inferred
+ * from the last job. Inferring it was wrong twice over: the grid hid itself
+ * entirely whenever the most recent job happened to be a single-scene
+ * preview, and it read "done" off a counter that skips excluded scenes, so
+ * one exclusion shifted every tile after it. What clips a project has is a
+ * fact about the project, not about whatever was run last.
+ *
+ * The job is consulted for one thing only: which scene is being generated
+ * right now, so that tile can show it.
  */
 
-type ClipState = "done" | "running" | "failed" | "waiting" | "excluded";
+type LiveState = "running" | "failed" | null;
 
-/**
- * Derived from the job's counters rather than stored per scene. The worker
- * writes scenes_completed as it goes, so the clip at that position is the
- * one currently in flight - and, if the run died, the one it died on.
- *
- * `position` counts only the scenes actually in the run. The worker skips
- * excluded scenes, so counting them here shifted every tile after the first
- * excluded one: it marked the excluded scene "done" and then fetched a clip
- * that had never been generated for it.
- */
-function stateOf(position: number | null, job: GenerationJob): ClipState {
-  if (position === null) return "excluded";
+function liveStateOf(
+  scene: StoryboardScene,
+  position: number | null,
+  job: GenerationJob | null
+): LiveState {
+  if (!job || job.status === "completed") return null;
+  const active = job.status === "processing" || job.status === "queued";
+
+  // A single-scene preview only ever touches the scene it names.
+  if (job.scene_id) {
+    if (job.scene_id !== scene.id) return null;
+    if (active) return "running";
+    return job.status === "failed" ? "failed" : null;
+  }
+
+  // Excluded scenes are not in the run at all, so nothing is happening to
+  // them however far along it is.
+  if (position === null) return null;
   const done = job.scenes_completed ?? 0;
-  if (position < done) return "done";
-  if (job.status === "failed") return position === done ? "failed" : "waiting";
-  if (job.status === "completed") return "done";
-  if (job.status === "processing" && position === done) return "running";
-  return "waiting";
+  if (position !== done) return null;
+  if (active) return "running";
+  return job.status === "failed" ? "failed" : null;
 }
 
 function ClipTile({
   projectId,
   scene,
   index,
-  state,
+  live,
   aspectRatio,
   onInclusionChanged,
 }: {
   projectId: string;
   scene: StoryboardScene;
   index: number;
-  state: ClipState;
+  /** Whether this scene is the one the current run is working on. */
+  live: LiveState;
   aspectRatio: AspectRatio;
   onInclusionChanged: () => void;
 }) {
@@ -64,12 +74,32 @@ function ClipTile({
   const [take, setTake] = useState(scene.selected_take);
   const objectUrl = useRef<string | null>(null);
 
-  // Fetched once the clip exists, and only then: asking for a scene that has
-  // not been generated yet is a guaranteed 404 per tile per poll. An
-  // excluded scene is included here on purpose - it may already have a clip
-  // from an earlier run, and seeing what is being dropped is the whole basis
-  // for deciding whether to put it back.
-  const hasClip = state === "done" || state === "excluded";
+  // How many takes this scene has, which is also how we know whether it has
+  // been generated at all. Asked of the server rather than worked out from
+  // the last job, and re-asked when a run finishes so a freshly generated
+  // clip appears without a reload. An excluded scene is asked too: it may
+  // have a clip from an earlier run, and seeing what is being dropped is the
+  // whole basis for deciding whether to put it back.
+  useEffect(() => {
+    if (live === "running") return;
+    let cancelled = false;
+    getSceneTakes(projectId, scene.id)
+      .then((result) => {
+        if (cancelled) return;
+        setTakeCount(result.takes);
+        setTake(result.selected_take);
+      })
+      // A scene that has never been generated answers 0 takes, or 404s on a
+      // storyboard the server no longer knows. Either way there is nothing
+      // to show and nothing worth saying.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, scene.id, live]);
+
+  const hasClip = takeCount > 0;
+
   useEffect(() => {
     if (!hasClip) return;
     let cancelled = false;
@@ -80,30 +110,11 @@ function ClipTile({
         objectUrl.current = URL.createObjectURL(blob);
         setClipUrl(objectUrl.current);
       })
-      // Silent: the tile still says the clip is done, and the finished video
-      // below is the thing that actually matters.
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [projectId, scene.id, hasClip, take]);
-
-  // How many takes there are to choose between. Only asked once the scene is
-  // done, since before that the answer is always none.
-  useEffect(() => {
-    if (!hasClip) return;
-    let cancelled = false;
-    getSceneTakes(projectId, scene.id)
-      .then((result) => {
-        if (cancelled) return;
-        setTakeCount(result.takes);
-        setTake(result.selected_take);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, scene.id, hasClip]);
 
   const [included, setIncluded] = useState(scene.included_in_video);
 
@@ -153,13 +164,12 @@ function ClipTile({
     <div
       className={cn(
         "flex flex-col gap-2 rounded-lg border p-3 transition-colors",
-        state === "running"
+        live === "running"
           ? "border-primary bg-primary/5"
-          : state === "failed"
+          : live === "failed"
             ? "border-destructive/40 bg-destructive/5"
             : "border-border",
-        state === "excluded" && "border-dashed",
-        state === "waiting" && "opacity-60",
+        !hasClip && live === null && "border-dashed opacity-70",
         !included && "opacity-50 saturate-0"
       )}
     >
@@ -168,10 +178,12 @@ function ClipTile({
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {scene.features_creator && <span className="text-foreground">You</span>}
           <span className="tabular-nums">{scene.duration_seconds}s</span>
-          {state === "done" && <Check className="size-3.5 text-primary" aria-label="Done" />}
-          {state === "running" && <Spinner className="size-3.5" aria-label="Generating" />}
-          {state === "failed" && (
+          {live === "running" && <Spinner className="size-3.5" aria-label="Generating" />}
+          {live === "failed" && (
             <AlertTriangle className="size-3.5 text-destructive" aria-label="Failed" />
+          )}
+          {live === null && hasClip && (
+            <Check className="size-3.5 text-primary" aria-label="Generated" />
           )}
         </div>
       </div>
@@ -188,13 +200,18 @@ function ClipTile({
         )}
       >
         {clipUrl ? (
-          <video src={clipUrl} controls className="size-full object-cover" />
+          <video src={clipUrl} controls className="size-full object-contain" />
         ) : (
-          <div className="flex size-full items-center justify-center">
-            {state === "running" ? (
+          <div className="flex size-full flex-col items-center justify-center gap-1.5">
+            {live === "running" ? (
               <Spinner />
             ) : (
-              <Film className="size-5 text-muted-foreground" aria-hidden="true" />
+              <>
+                <Film className="size-5 text-muted-foreground" aria-hidden="true" />
+                <span className="text-[11px] text-muted-foreground">
+                  Not generated yet
+                </span>
+              </>
             )}
           </div>
         )}
@@ -281,18 +298,17 @@ export function ClipGrid({
 }: {
   projectId: string;
   scenes: StoryboardScene[];
-  job: GenerationJob;
+  /** Null when nothing has ever been generated for this project. */
+  job: GenerationJob | null;
   aspectRatio: AspectRatio;
   /** A scene moved in or out of the cut, so the combine card must recheck. */
   onInclusionChanged: () => void;
 }) {
-  // A single-scene preview is one clip, and it is shown on the storyboard
-  // step beside the scene it came from. A grid of one, with the rest greyed
-  // out, would misdescribe what the run did.
-  if (job.scene_id) return null;
+  if (scenes.length === 0) return null;
 
   // Position within the run, which is the order the worker actually
-  // generates in. Excluded scenes hold no position and are shown as such.
+  // generates in. Excluded scenes hold no position, since the run skips
+  // them.
   let position = 0;
   const positions = scenes.map((scene) =>
     scene.included_in_video ? position++ : null
@@ -306,7 +322,7 @@ export function ClipGrid({
           projectId={projectId}
           scene={scene}
           index={index}
-          state={stateOf(positions[index], job)}
+          live={liveStateOf(scene, positions[index], job)}
           aspectRatio={aspectRatio}
           onInclusionChanged={onInclusionChanged}
         />
