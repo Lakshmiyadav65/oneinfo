@@ -133,6 +133,10 @@ export function GenerateView({ projectId }: { projectId: string }) {
     setVideoError(null);
     setVideoUrl(null);
     setOutput(null);
+    // The previous run is over. Leaving its outcome up while a new one is
+    // starting reports the old failure - or the old success - as though it
+    // were this run's, which is the one thing the bar is there to say.
+    setJob(null);
     try {
       setJob(await startGeneration(projectId));
     } catch (err) {
@@ -196,7 +200,10 @@ export function GenerateView({ projectId }: { projectId: string }) {
         output={project.data.output_settings}
         storyboard={storyboard.status === "success" ? storyboard.data : null}
         onConfirmed={async () => {
-          project.retry();
+          // Refreshed rather than retried: this view is gated on `project`,
+          // and dropping it back to loading takes the whole page - progress
+          // bar included - off the screen just as the run begins.
+          void project.refresh();
           await handleStart();
         }}
       />
@@ -243,13 +250,13 @@ export function GenerateView({ projectId }: { projectId: string }) {
             aspectRatio={project.data.output_settings.aspect_ratio}
             onInclusionChanged={() => {
               setCutVersion((n) => n + 1);
-              storyboard.retry();
+              void storyboard.refresh();
             }}
           />
         </div>
       )}
 
-      {job === null && (
+      {job === null && !isStarting && (
         <Card>
           <CardContent className="flex flex-col items-start gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -266,13 +273,19 @@ export function GenerateView({ projectId }: { projectId: string }) {
         </Card>
       )}
 
-      {job && (
+      {/*
+        Shown from the click, not from the reply to it. Starting a run is a
+        round trip, and until it came back this card did not exist - so the
+        one moment the creator most needs telling that their money is being
+        spent was the one moment nothing on the page said so.
+      */}
+      {(job || isStarting) && (
         <Card>
           <CardContent className="space-y-5 p-6">
-            <GenerationProgress job={job} />
+            <GenerationProgress job={job ?? null} />
 
 
-            {job.status === "failed" && (
+            {job?.status === "failed" && (
               <div className="space-y-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
                 <p className="text-sm text-foreground">{failureMessage(job)}</p>
                 {job.error_detail && (
@@ -302,7 +315,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
               from. Saying so beats showing the previous full render here and
               letting it pass for what this run produced.
             */}
-            {job.status === "completed" && job.scene_id && (
+            {job?.status === "completed" && job.scene_id && (
               <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-4">
                 <p className="text-sm text-foreground">
                   The last run rendered a single scene as a preview, not the whole

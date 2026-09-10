@@ -68,7 +68,27 @@ function sceneLabel(job: GenerationJob): string | null {
   return `${doneCount} of ${total} scenes rendered`;
 }
 
-export function GenerationProgress({ job }: { job: GenerationJob }) {
+/**
+ * Stands in for the run between the creator asking for it and the server
+ * saying it exists. Queued at zero is the truth for that second, and it puts
+ * the bar on screen on the click rather than on the reply.
+ */
+const STARTING: GenerationJob = {
+  id: "starting",
+  scene_id: null,
+  status: "queued",
+  current_stage: "Starting…",
+  scenes_total: null,
+  scenes_completed: null,
+  stitch_only: false,
+  error_message: null,
+  error_detail: null,
+  created_at: "",
+  updated_at: "",
+};
+
+export function GenerationProgress({ job: started }: { job: GenerationJob | null }) {
+  const job = started ?? STARTING;
   const phases = phasesFor(job);
   const phase = phaseOf(job);
   const activeIndex = phases.findIndex((p) => p.key === phase);

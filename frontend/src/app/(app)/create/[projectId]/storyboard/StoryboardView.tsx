@@ -339,7 +339,7 @@ export function StoryboardView({ projectId }: { projectId: string }) {
                 canGoOnCamera={canGoOnCamera}
                 output={projectData.output_settings}
                 storyboard={storyboard}
-                onRegenerated={() => project.retry()}
+                onRegenerated={() => void project.refresh()}
                 onUpdated={setOverride}
               />
             ))}
