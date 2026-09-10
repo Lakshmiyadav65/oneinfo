@@ -226,6 +226,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
                 projectId={projectId}
                 scenes={storyboard.data.scenes}
                 job={job}
+                aspectRatio={project.data.output_settings.aspect_ratio}
               />
             )}
 
@@ -282,7 +283,13 @@ export function GenerateView({ projectId }: { projectId: string }) {
                 {videoError && <ErrorState description={videoError} />}
                 {!videoError && videoUrl && (
                   <>
-                    <video controls src={videoUrl} className="w-full rounded-md" />
+                    {/* Height-capped and centred: a 9:16 export at full
+                        width fills two screens on its own. */}
+                    <video
+                      controls
+                      src={videoUrl}
+                      className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg border border-border bg-black"
+                    />
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <p className="text-xs text-muted-foreground">{summary}</p>
                       <div className="flex flex-wrap items-center gap-2">

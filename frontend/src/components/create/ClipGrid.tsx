@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils/cn";
 import type { GenerationJob } from "@/types/generation";
 import type { StoryboardScene } from "@/types/storyboard";
+import type { AspectRatio } from "@/types/output-settings";
 
 /**
  * Every clip in the video, as tiles, while the run is happening.
@@ -40,11 +41,13 @@ function ClipTile({
   scene,
   index,
   state,
+  aspectRatio,
 }: {
   projectId: string;
   scene: StoryboardScene;
   index: number;
   state: ClipState;
+  aspectRatio: AspectRatio;
 }) {
   const { toast } = useToast();
   const [clipUrl, setClipUrl] = useState<string | null>(null);
@@ -138,7 +141,17 @@ function ClipTile({
         </div>
       </div>
 
-      <div className="aspect-video overflow-hidden rounded-md bg-muted">
+      {/*
+        Shaped like the clip actually is. A vertical video in a 16:9 box sits
+        in the middle of two grey bars, which is exactly what the creator is
+        trying to avoid producing.
+      */}
+      <div
+        className={cn(
+          "overflow-hidden rounded-md bg-black",
+          aspectRatio === "9:16" ? "mx-auto aspect-[9/16] max-h-64" : "aspect-video"
+        )}
+      >
         {clipUrl ? (
           <video src={clipUrl} controls className="size-full object-cover" />
         ) : (
@@ -210,10 +223,12 @@ export function ClipGrid({
   projectId,
   scenes,
   job,
+  aspectRatio,
 }: {
   projectId: string;
   scenes: StoryboardScene[];
   job: GenerationJob;
+  aspectRatio: AspectRatio;
 }) {
   // A single-scene preview is one clip, and it is shown on the storyboard
   // step beside the scene it came from. A grid of one, with the rest greyed
@@ -229,6 +244,7 @@ export function ClipGrid({
           scene={scene}
           index={index}
           state={stateOf(index, job)}
+          aspectRatio={aspectRatio}
         />
       ))}
     </div>

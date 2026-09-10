@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Textarea";
 import { VisualPrompt } from "@/components/create/VisualPrompt";
+import { Disclosure } from "@/components/ui/Disclosure";
+import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/components/ui/Toast";
 import {
   setSceneEnvironment,
@@ -16,20 +18,12 @@ import {
 } from "@/lib/api/storyboard";
 import { onCameraSurcharge, sceneCost } from "@/lib/workflow/scene-cost";
 import type { OutputSettings } from "@/types/output-settings";
-import { cn } from "@/lib/utils/cn";
+import { presetLabel } from "@/types/environment";
 import type { EnvironmentPreset, SceneEnvironment } from "@/types/environment";
 import type { Storyboard, StoryboardScene } from "@/types/storyboard";
 
 function errorDescription(err: unknown): string | undefined {
   return err instanceof Error ? err.message : undefined;
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-      {children}
-    </p>
-  );
 }
 
 /**
@@ -118,33 +112,49 @@ export function SceneCard({
   }
 
   return (
-    <Card>
-      <CardContent className="space-y-4 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-foreground">Scene {scene.order}</p>
-            {scene.features_creator && <Badge variant="info">You</Badge>}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {scene.duration_seconds}s &middot;{" "}
-            {sceneCost(scene.duration_seconds, scene.features_creator, output)}
-          </p>
+    <Card
+      className={cn(
+        // A coloured spine, because an on-camera scene is the one that costs
+        // three times the rest and is worth spotting while scrolling.
+        "overflow-hidden border-l-4 transition-colors",
+        scene.features_creator ? "border-l-primary" : "border-l-border"
+      )}
+    >
+      <CardContent className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold tabular-nums text-primary">
+            {scene.order}
+          </span>
+          {scene.features_creator && <Badge variant="info">You on camera</Badge>}
+          <span className="ml-auto flex items-center gap-2 text-xs tabular-nums text-muted-foreground">
+            <span className="rounded-md bg-muted px-1.5 py-0.5">
+              {scene.duration_seconds}s
+            </span>
+            <span className="rounded-md bg-muted px-1.5 py-0.5">
+              {sceneCost(scene.duration_seconds, scene.features_creator, output)}
+            </span>
+          </span>
         </div>
 
         {/*
-          The spoken line leads the card. It is the one thing on a scene the
-          creator is really judging - what the person on screen actually says.
+          The spoken line leads the card, and is the only thing on it that
+          never folds. It is what the creator is really judging - what the
+          person on screen actually says - and everything else here is
+          production detail about how it gets filmed.
         */}
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <span className="inline-flex rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-primary">
             Dialogue
           </span>
-          <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm leading-relaxed text-foreground">
+          <p className="rounded-lg border-l-2 border-primary/40 bg-muted/30 px-3 py-2 text-sm leading-relaxed text-foreground">
             {scene.voiceover}
           </p>
         </div>
 
-        <div className="border-t border-border pt-3">
+        <Disclosure
+          title="Look & setup"
+          summary={presetLabel(scene.environment.preset)}
+        >
           <EnvironmentSetup
             idPrefix={`scene-${scene.id}`}
             environment={scene.environment}
@@ -154,7 +164,7 @@ export function SceneCard({
             }
             onChange={(environment) => requestEnvironment(environment, false)}
           />
-        </div>
+        </Disclosure>
 
         {pending && (
           <div
@@ -176,27 +186,25 @@ export function SceneCard({
           </div>
         )}
 
-        <div className="space-y-1.5 border-t border-border pt-3">
-          <div className="flex items-center justify-between gap-2">
-            <SectionLabel>Visual</SectionLabel>
-            {!editingVisual && (
-              <button
-                type="button"
-                onClick={() => {
-                  setVisualDraft(scene.visual_prompt);
-                  setEditingVisual(true);
-                }}
-                className="rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Edit
-              </button>
-            )}
-          </div>
+        {/*
+          Folded by default. It is the longest thing on the card by far and
+          the creator did not write it - it is generated from the setup
+          above, and only worth opening when something looks wrong.
+        */}
+        <Disclosure
+          title="Prompt sent to the model"
+          summary="Scene, dialogue, camera, negatives"
+          badge={
+            scene.visual_is_custom ? (
+              <Badge variant="default">Edited by you</Badge>
+            ) : undefined
+          }
+        >
           {editingVisual ? (
             <div className="space-y-2">
               <Textarea
                 aria-label={`Visual description for scene ${scene.order}`}
-                rows={4}
+                rows={10}
                 value={visualDraft}
                 disabled={busy}
                 onChange={(e) => setVisualDraft(e.target.value)}
@@ -216,14 +224,21 @@ export function SceneCard({
               </div>
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-2">
               <VisualPrompt prompt={scene.visual_prompt} />
-              {scene.visual_is_custom && (
-                <p className="text-xs text-foreground">(edited by you)</p>
-              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setVisualDraft(scene.visual_prompt);
+                  setEditingVisual(true);
+                }}
+              >
+                Edit the prompt
+              </Button>
             </div>
           )}
-        </div>
+        </Disclosure>
 
         {/*
           The costliest decision on the page, so it is given the weight of

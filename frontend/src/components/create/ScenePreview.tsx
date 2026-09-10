@@ -164,10 +164,15 @@ export function ScenePreview({
 
       {clipUrl && (
         <div className="space-y-2">
+          {/*
+            Capped by height, not width. These are 9:16 now, and a vertical
+            clip at max-w-sm stands 683px tall - it pushed the rest of the
+            scene off the screen entirely.
+          */}
           <video
             src={clipUrl}
             controls
-            className="w-full max-w-sm rounded-md border border-border"
+            className="max-h-72 w-auto max-w-full rounded-lg border border-border bg-black"
           />
           <Button variant="ghost" size="sm" asChild>
             <a href={clipUrl} download={`scene-${scene.order}.mp4`}>

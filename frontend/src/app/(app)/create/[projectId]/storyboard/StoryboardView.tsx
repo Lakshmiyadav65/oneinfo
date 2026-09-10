@@ -209,18 +209,40 @@ export function StoryboardView({ projectId }: { projectId: string }) {
 
       {storyboard && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            {/*
-              No "QA Passed" badge. A green tick on every healthy storyboard
-              is noise on the pass, which is nearly always; the issues panel
-              below still speaks up on the rare fail, which is the only time
-              it has anything to say.
-            */}
-            <span className="text-xs text-muted-foreground">
-              Estimated {storyboardCost(storyboard, projectData.output_settings)} to
-              generate
-            </span>
-            <Button variant="secondary" size="sm" onClick={handleGenerate} isLoading={isGenerating}>
+          {/*
+            The shape of the whole video in one line, before the scenes. A
+            creator arriving here wants to know how long it runs and what it
+            will cost before reading six cards to work it out.
+
+            No "QA Passed" badge. A green tick on every healthy storyboard is
+            noise on the pass, which is nearly always; the issues panel below
+            still speaks up on the rare fail.
+          */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card p-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="text-sm font-semibold text-foreground">
+                {storyboard.scenes.length} scenes
+              </span>
+              <span className="text-sm tabular-nums text-muted-foreground">
+                {storyboard.scenes.reduce((sum, s) => sum + s.duration_seconds, 0)}s
+              </span>
+              <span className="text-sm tabular-nums text-muted-foreground">
+                {storyboardCost(storyboard, projectData.output_settings)} to generate
+              </span>
+              {storyboard.scenes.some((s) => s.features_creator) && (
+                <span className="text-xs text-muted-foreground">
+                  {storyboard.scenes.filter((s) => s.features_creator).length} with you
+                  on camera
+                </span>
+              )}
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="ml-auto"
+              onClick={handleGenerate}
+              isLoading={isGenerating}
+            >
               Regenerate Storyboard
             </Button>
           </div>
