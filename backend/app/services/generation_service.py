@@ -161,6 +161,112 @@ async def start_generation(
     return job, True
 
 
+async def _existing_clip(
+    db: AsyncSession, scene: StoryboardScene, take: int | None = None
+) -> Asset | None:
+    """
+    The clip on hand for one scene, or None.
+
+    Falls back to take 0 when the picked take is missing, for the same reason
+    get_scene_asset does: clips generated before takes existed all carry
+    index 0, and a scene pointing at a take that run never produced still has
+    a perfectly good clip sitting there.
+    """
+    wanted = scene.selected_take if take is None else take
+    for candidate in (wanted, 0):
+        result = await db.execute(
+            select(Asset)
+            .where(
+                Asset.scene_id == scene.id,
+                Asset.asset_type == AssetType.scene_video,
+                Asset.take_index == candidate,
+            )
+            .order_by(Asset.created_at.desc())
+            .limit(1)
+        )
+        asset = result.scalar_one_or_none()
+        if asset is not None:
+            return asset
+    return None
+
+
+async def get_stitch_readiness(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID
+) -> tuple[int, list[int]]:
+    """
+    (scenes with a clip, scene numbers still missing one).
+
+    Asked before offering the button rather than after pressing it: a
+    creator who is one scene short should be told which scene, not handed a
+    refusal once they have committed.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    result = await db.execute(
+        select(Storyboard)
+        .where(Storyboard.project_id == project_id)
+        .options(selectinload(Storyboard.scenes))
+    )
+    storyboard = result.scalar_one_or_none()
+    if storyboard is None or not storyboard.scenes:
+        return 0, []
+
+    ready = 0
+    missing: list[int] = []
+    for scene in sorted(storyboard.scenes, key=lambda s: s.order):
+        if await _existing_clip(db, scene) is not None:
+            ready += 1
+        else:
+            missing.append(scene.order)
+    return ready, missing
+
+
+async def start_stitch(
+    db: AsyncSession, creator_id: str, project_id: uuid.UUID
+) -> tuple[GenerationJob, bool]:
+    """
+    Makes the finished video out of the clips already generated.
+
+    Calls the video provider zero times, so it costs nothing. This is the
+    gap it closes: generating scenes one at a time left a project full of
+    paid clips and no way to combine them, because the only route to a
+    finished video was a full run that regenerated and re-billed every one
+    of them.
+    """
+    project = await project_service.get_owned_project(db, creator_id, project_id)
+
+    ready, missing = await get_stitch_readiness(db, creator_id, project_id)
+    if not ready:
+        raise ValidationAppError(
+            "None of the scenes have been generated yet, so there is nothing to "
+            "combine. Generate the video first."
+        )
+    if missing:
+        listed = ", ".join(str(order) for order in missing)
+        raise ValidationAppError(
+            f"Scene {listed} hasn't been generated yet, so the video would have a "
+            "gap in it. Generate the missing scenes, then combine."
+            if len(missing) == 1
+            else f"Scenes {listed} haven't been generated yet, so the video would "
+            "have gaps in it. Generate the missing scenes, then combine."
+        )
+
+    existing = await _get_latest_job(db, project.id)
+    if existing is not None and existing.status in (JobStatus.queued, JobStatus.processing):
+        return existing, False
+
+    job = GenerationJob(
+        project_id=project.id,
+        creator_id=creator_id,
+        stitch_only=True,
+        status=JobStatus.queued,
+    )
+    db.add(job)
+    project.status = ProjectStatus.generating
+    await db.commit()
+    await db.refresh(job)
+    return job, True
+
+
 async def get_generation_status(
     db: AsyncSession, creator_id: str, project_id: uuid.UUID
 ) -> GenerationJob:
@@ -297,6 +403,58 @@ async def _wait_for_completion(
     raise GenerationError("Video generation timed out.")
 
 
+async def _finish_video(
+    db: AsyncSession,
+    settings: Settings,
+    storage,
+    job: GenerationJob,
+    project: Project,
+    render_inputs: list[Path],
+    output,
+    temp_files: list[Path],
+) -> None:
+    """
+    Stitches the clips into the finished video and marks the run done.
+
+    Shared by both paths deliberately. A stitch-only run and a full run must
+    produce byte-identical output from the same clips - if they could differ,
+    "combine what I have" would quietly be a second, lesser kind of render.
+    """
+    job.current_stage = "Rendering final video"
+    await db.commit()
+
+    final_path, duration = await render_final_video(
+        settings, render_inputs, size=output_size(settings, output)
+    )
+    temp_files.append(final_path)
+
+    if not final_path.exists() or final_path.stat().st_size == 0 or duration <= 0:
+        raise GenerationError("Rendered output failed validation.")
+
+    final_bytes = final_path.read_bytes()
+    output_storage_key = f"{project.creator_id}/{project.id}/output.mp4"
+    await asyncio.to_thread(storage.save, output_storage_key, final_bytes)
+
+    existing_output = await db.execute(
+        select(VideoOutput).where(VideoOutput.project_id == project.id)
+    )
+    video_output = existing_output.scalar_one_or_none()
+    if video_output is None:
+        video_output = VideoOutput(project_id=project.id, creator_id=project.creator_id)
+        db.add(video_output)
+
+    video_output.storage_key = output_storage_key
+    video_output.mime_type = "video/mp4"
+    video_output.duration_seconds = duration
+    video_output.file_size_bytes = len(final_bytes)
+
+    project.status = ProjectStatus.completed
+    job.status = JobStatus.completed
+    job.current_stage = "Completed"
+    job.error_message = None
+    await db.commit()
+
+
 async def run_generation_job(job_id: uuid.UUID) -> None:
     """
     The actual worker. Runs in its own DB session since it executes after
@@ -342,9 +500,43 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             job.scenes_completed = 0
             await db.commit()
 
-            video_provider = get_video_provider(settings)
             storage = get_storage_provider(settings)
             output = project_output_settings(project)
+            render_inputs: list[Path] = []
+
+            if job.stitch_only:
+                # Never touches the video provider, which is the whole point:
+                # this run is free. Building a provider here would also load
+                # service account credentials for a job that cannot make a
+                # request, and would fail a project whose credentials have
+                # since gone stale for no reason at all.
+                for index, scene in enumerate(scenes, start=1):
+                    job.current_stage = f"Collecting clip {index} of {len(scenes)}"
+                    await db.commit()
+
+                    asset = await _existing_clip(db, scene)
+                    if asset is None:
+                        raise GenerationError(
+                            f"Scene {scene.order} has no generated clip any more, so "
+                            "the video cannot be combined. Generate that scene, then "
+                            "try again."
+                        )
+                    clip_bytes = await asyncio.to_thread(storage.read, asset.storage_key)
+                    local_path = (
+                        Path(tempfile.gettempdir()) / f"oneinfo-stitch-{uuid.uuid4()}.mp4"
+                    )
+                    local_path.write_bytes(clip_bytes)
+                    temp_files.append(local_path)
+                    render_inputs.append(local_path)
+                    job.scenes_completed = index
+                    await db.commit()
+
+                await _finish_video(
+                    db, settings, storage, job, project, render_inputs, output, temp_files
+                )
+                return
+
+            video_provider = get_video_provider(settings)
 
             # Fetched once, not per scene: the same photos go to every
             # on-camera scene, and re-reading them from storage each time
@@ -355,7 +547,6 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     db, settings, project.creator_id
                 )
 
-            render_inputs: list[Path] = []
             for index, scene in enumerate(scenes, start=1):
                 job.current_stage = (
                     "Generating your scene"
@@ -432,39 +623,9 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 await db.commit()
                 return
 
-            job.current_stage = "Rendering final video"
-            await db.commit()
-
-            final_path, duration = await render_final_video(
-                settings, render_inputs, size=output_size(settings, output)
+            await _finish_video(
+                db, settings, storage, job, project, render_inputs, output, temp_files
             )
-            temp_files.append(final_path)
-
-            if not final_path.exists() or final_path.stat().st_size == 0 or duration <= 0:
-                raise GenerationError("Rendered output failed validation.")
-
-            final_bytes = final_path.read_bytes()
-            output_storage_key = f"{project.creator_id}/{project.id}/output.mp4"
-            await asyncio.to_thread(storage.save, output_storage_key, final_bytes)
-
-            existing_output = await db.execute(
-                select(VideoOutput).where(VideoOutput.project_id == project.id)
-            )
-            video_output = existing_output.scalar_one_or_none()
-            if video_output is None:
-                video_output = VideoOutput(project_id=project.id, creator_id=project.creator_id)
-                db.add(video_output)
-
-            video_output.storage_key = output_storage_key
-            video_output.mime_type = "video/mp4"
-            video_output.duration_seconds = duration
-            video_output.file_size_bytes = len(final_bytes)
-
-            project.status = ProjectStatus.completed
-            job.status = JobStatus.completed
-            job.current_stage = "Completed"
-            job.error_message = None
-            await db.commit()
         except Exception as exc:
             await db.rollback()
             job = await db.get(GenerationJob, job_id)

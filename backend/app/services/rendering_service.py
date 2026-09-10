@@ -31,7 +31,16 @@ async def render_final_video(
         # Still re-encoded to one size, frame rate and audio layout: the
         # concat below stream-copies, and it produces a broken file if the
         # parts disagree on any of those.
-        normalize_filter = f"scale={width}:{height},fps={settings.video_fps}"
+        # Fitted and padded, never stretched. A plain scale=W:H distorts
+        # anything whose shape differs from the target, and clips genuinely
+        # do differ: a project generated landscape and later switched to
+        # vertical stitches old 16:9 clips into a 9:16 video, and squashing
+        # a face is a worse outcome than a black bar.
+        normalize_filter = (
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
+            f"setsar=1,fps={settings.video_fps}"
+        )
         await run_ffmpeg(
             settings.ffmpeg_path,
             [

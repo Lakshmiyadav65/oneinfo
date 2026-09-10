@@ -17,6 +17,8 @@ class GenerationJobOut(BaseModel):
     current_stage: str | None
     scenes_total: int | None
     scenes_completed: int | None
+    # True for a free run that only combined clips already on hand.
+    stitch_only: bool = False
     error_message: str | None
     error_detail: str | None
     created_at: datetime
@@ -36,3 +38,13 @@ class SceneTakesOut(BaseModel):
 
     takes: int
     selected_take: int
+
+
+class StitchReadinessOut(BaseModel):
+    """Whether the clips on hand can be combined, and what is missing."""
+
+    scenes_total: int
+    scenes_ready: int
+    # Scene numbers with no clip yet. Empty means combining is available.
+    missing_scenes: list[int]
+

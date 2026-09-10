@@ -16,6 +16,7 @@ import { WorkflowHeader } from "@/components/workflow/WorkflowHeader";
 import { GenerationProgress } from "@/components/create/GenerationProgress";
 import { ClipGrid } from "@/components/create/ClipGrid";
 import { GenerateDialog } from "@/components/create/GenerateDialog";
+import { CombineClips } from "@/components/create/CombineClips";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -198,6 +199,27 @@ export function GenerateView({ projectId }: { projectId: string }) {
       />
 
       {job === undefined && <Skeleton className="h-24 w-full" />}
+
+      {/*
+        Above the paid path on purpose. A creator who has already generated
+        every scene one at a time should see the free route to a finished
+        video before the button that regenerates and re-bills all of them.
+      */}
+      {job?.status !== "processing" && job?.status !== "queued" && (
+        <CombineClips
+          projectId={projectId}
+          disabled={isStarting}
+          onStarted={(started) => {
+            // Same reset as starting a paid run: the previous finished
+            // video is about to be replaced, so it must stop being shown
+            // as though it were this run's result.
+            setVideoError(null);
+            setVideoUrl(null);
+            setOutput(null);
+            setJob(started);
+          }}
+        />
+      )}
 
       {job === null && (
         <Card>

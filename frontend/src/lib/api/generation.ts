@@ -73,3 +73,23 @@ export function selectSceneTake(
 ): Promise<SceneTakes> {
   return api.post<SceneTakes>(`/projects/${projectId}/scenes/${sceneId}/takes/${take}`, {});
 }
+
+export type StitchReadiness = {
+  scenes_total: number;
+  scenes_ready: number;
+  /** Scene numbers with no clip yet. Empty means combining is available. */
+  missing_scenes: number[];
+};
+
+export function getStitchReadiness(projectId: string): Promise<StitchReadiness> {
+  return api.get<StitchReadiness>(`/projects/${projectId}/stitch`);
+}
+
+/**
+ * Combines the clips already generated into the finished video. Calls the
+ * video provider zero times, so it costs nothing.
+ */
+export function startStitch(projectId: string): Promise<GenerationJob> {
+  return api.post<GenerationJob>(`/projects/${projectId}/stitch`, {});
+}
+

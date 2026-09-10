@@ -10,7 +10,12 @@ from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.generation_job import GenerationJob
 from app.providers.storage import get_storage_provider
-from app.schemas.generation import GenerationJobOut, SceneTakesOut, VideoOutputOut
+from app.schemas.generation import (
+    GenerationJobOut,
+    SceneTakesOut,
+    StitchReadinessOut,
+    VideoOutputOut,
+)
 from app.services import generation_service
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["generation"])
@@ -93,6 +98,47 @@ async def start_scene_generation(
     job, is_new = await generation_service.start_generation(
         db, settings, creator.id, project_id, scene_id=scene_id
     )
+    if is_new:
+        background_tasks.add_task(generation_service.run_generation_job, job.id)
+    return job
+
+
+@router.get("/stitch", response_model=StitchReadinessOut)
+async def get_stitch_readiness(
+    project_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> StitchReadinessOut:
+    """
+    Whether the clips on hand can be combined into a finished video.
+
+    Asked before the button is offered rather than after it is pressed: a
+    creator one scene short should be told which scene, not handed a refusal
+    once they have committed.
+    """
+    ready, missing = await generation_service.get_stitch_readiness(
+        db, creator.id, project_id
+    )
+    return StitchReadinessOut(
+        scenes_total=ready + len(missing), scenes_ready=ready, missing_scenes=missing
+    )
+
+
+@router.post("/stitch", response_model=GenerationJobOut)
+async def start_stitch(
+    project_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> GenerationJob:
+    """
+    Combines the clips already generated into the finished video.
+
+    Calls the video provider zero times, so it costs nothing. Without it the
+    only route to a finished video was a full run that regenerated and
+    re-billed every scene, including the ones already paid for one at a time.
+    """
+    job, is_new = await generation_service.start_stitch(db, creator.id, project_id)
     if is_new:
         background_tasks.add_task(generation_service.run_generation_job, job.id)
     return job

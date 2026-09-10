@@ -9,6 +9,8 @@ export type GenerationJob = {
   /** Null until the run knows how many scenes it is rendering. */
   scenes_total: number | null;
   scenes_completed: number | null;
+  /** True for a free run that only combined clips already on hand. */
+  stitch_only: boolean;
   /** One sentence, written for the creator. */
   error_message: string | null;
   /** The raw provider/ffmpeg text behind it, for diagnosis. */

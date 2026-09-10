@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +34,13 @@ class GenerationJob(Base):
     scene_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("storyboard_scenes.id", ondelete="CASCADE"), nullable=True
     )
+    # True for a run that only stitches: it takes the clips already generated
+    # and on hand, and makes the finished video out of them without calling
+    # the video provider once. It is therefore free, which is the whole
+    # point - previously the only route to a finished video was a full run
+    # that regenerated and re-billed every scene, including the ones the
+    # creator had already paid to generate one at a time.
+    stitch_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[JobStatus] = mapped_column(String, nullable=False, default=JobStatus.queued, index=True)
     current_stage: Mapped[str | None] = mapped_column(String, nullable=True)
     # current_stage in numbers, so the UI can draw progress instead of an
