@@ -12,9 +12,11 @@ that redirects to 127.0.0.1 is the standard way past a check done only once.
 import ipaddress
 import re
 import socket
+import ssl
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
+import certifi
 import httpx
 from lxml import html as lxml_html
 
@@ -24,7 +26,24 @@ from app.core.errors import AppError
 # exhaust memory by streaming forever.
 MAX_BYTES = 3_000_000
 MAX_REDIRECTS = 5
+# The whole budget for reading one link, split across the two handshakes
+# tried below rather than spent entirely on the first. A link that has
+# already hung once should not cost the creator a second full timeout.
 TIMEOUT_SECONDS = 20.0
+FIRST_TIMEOUT_SECONDS = 12.0
+RETRY_TIMEOUT_SECONDS = TIMEOUT_SECONDS - FIRST_TIMEOUT_SECONDS
+
+# Hosts that only answered on the older handshake, remembered for the life of
+# the process. An event page is usually read alongside the pages it links to,
+# and paying the stall once per link is what makes it noticeable.
+_TLS12_HOSTS: set[str] = set()
+
+_HEADERS = {
+    # Named honestly. A server that would rather not be read by a bot
+    # deserves the chance to say so.
+    "User-Agent": "OneInfo/1.0 (+https://oneinfo.dev; content extraction)",
+    "Accept": "text/html,application/xhtml+xml",
+}
 
 # Stripped before reading: none of it is what the page is about, and left in
 # it drowns the article in menu items.
@@ -123,56 +142,102 @@ def _tidy(text: str) -> str:
     return _BLANK_LINES.sub("\n\n", "\n".join(lines)).strip()
 
 
-async def fetch_page(url: str) -> PageContent:
+def _tls12_context() -> ssl.SSLContext:
     """
-    One page, as text.
+    A client capped at TLS 1.2, used only as a second attempt.
+
+    Some fronts - www.odoo.com among them - complete an OpenSSL TLS 1.3
+    handshake and then never send the response. The connection stays open,
+    nothing arrives, and the read hangs until the timeout, so the creator is
+    told the site is unreachable while that same page opens in their browser
+    and under curl, which on Windows uses the OS TLS stack rather than
+    OpenSSL. The identical request over TLS 1.2 comes back in about two
+    seconds.
+
+    Capping every request at 1.2 to rescue those few sites would weaken all
+    the rest, so this is only ever reached after a timeout.
+    """
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.maximum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+
+async def _read_following_redirects(
+    url: str, *, timeout: float, verify: ssl.SSLContext | bool
+) -> tuple[httpx.Response, str]:
+    """
+    The response for `url`, and the address it was finally read from.
 
     Redirects are followed by hand rather than by httpx, because each hop has
     to be re-checked: following them automatically would mean only the first
     address was ever validated.
     """
-    current = url.strip()
-    _assert_safe(current)
-
+    current = url
     async with httpx.AsyncClient(
-        timeout=TIMEOUT_SECONDS,
-        follow_redirects=False,
-        headers={
-            # Named honestly. A server that would rather not be read by a
-            # bot deserves the chance to say so.
-            "User-Agent": "OneInfo/1.0 (+https://oneinfo.dev; content extraction)",
-            "Accept": "text/html,application/xhtml+xml",
-        },
+        timeout=timeout, follow_redirects=False, verify=verify, headers=_HEADERS
     ) as client:
         for _ in range(MAX_REDIRECTS + 1):
-            try:
-                response = await client.get(current)
-            except httpx.TimeoutException as exc:
-                # Distinguished from other transport errors because the cause
-                # is usually neither the link nor us: some sites simply do not
-                # answer from every network, and "try again" is bad advice
-                # when the second attempt will hang for just as long.
-                raise PageFetchError(
-                    f"{urlparse(current).hostname} didn't respond within "
-                    f"{int(TIMEOUT_SECONDS)} seconds. The site may be blocking "
-                    "automated readers, or be unreachable from this network. "
-                    "Pasting the page's text into My Knowledge works instead."
-                ) from exc
-            except httpx.HTTPError as exc:
-                raise PageFetchError(
-                    f"Couldn't open that link: {exc or type(exc).__name__}"
-                ) from exc
+            response = await client.get(current)
+            if not response.is_redirect:
+                return response, current
+            location = response.headers.get("location")
+            if not location:
+                raise PageFetchError("That link redirected to nowhere.")
+            current = urljoin(current, location)
+            _assert_safe(current)
+    raise PageFetchError("That link redirected too many times.")
 
-            if response.is_redirect:
-                location = response.headers.get("location")
-                if not location:
-                    raise PageFetchError("That link redirected to nowhere.")
-                current = urljoin(current, location)
-                _assert_safe(current)
-                continue
+
+def _unreachable(hostname: str | None) -> PageFetchError:
+    """Said when nothing came back in time, on either handshake."""
+    return PageFetchError(
+        f"{hostname} didn't respond within {int(TIMEOUT_SECONDS)} seconds. "
+        "The site may be blocking automated readers, or be unreachable from "
+        "this network. Pasting the page's text into My Knowledge works instead."
+    )
+
+
+async def fetch_page(url: str) -> PageContent:
+    """One page, as text."""
+    start = url.strip()
+    _assert_safe(start)
+    host = urlparse(start).hostname or ""
+
+    # A host already known to stall goes straight to the handshake that works
+    # and gets the whole budget for it, rather than spending most of it on an
+    # attempt this process has already watched hang.
+    known_staller = host in _TLS12_HOSTS
+    attempts: list[tuple[float, bool]] = (
+        [(TIMEOUT_SECONDS, True)]
+        if known_staller
+        else [(FIRST_TIMEOUT_SECONDS, False), (RETRY_TIMEOUT_SECONDS, True)]
+    )
+
+    timed_out: httpx.TimeoutException | None = None
+    for attempt, (timeout, older_handshake) in enumerate(attempts):
+        last = attempt == len(attempts) - 1
+        try:
+            response, current = await _read_following_redirects(
+                start,
+                timeout=timeout,
+                verify=_tls12_context() if older_handshake else True,
+            )
+            if older_handshake and not known_staller:
+                _TLS12_HOSTS.add(host)
             break
-        else:
-            raise PageFetchError("That link redirected too many times.")
+        except httpx.TimeoutException as exc:
+            timed_out = exc
+            if last:
+                raise _unreachable(host) from exc
+        except httpx.HTTPError as exc:
+            # A refusal on the second attempt still means the first one hung,
+            # which is the more useful thing to say - and "try again" is bad
+            # advice when the next attempt will hang for just as long.
+            if timed_out is not None:
+                raise _unreachable(host) from timed_out
+            raise PageFetchError(
+                f"Couldn't open that link: {exc or type(exc).__name__}"
+            ) from exc
 
     if response.status_code >= 400:
         raise PageFetchError(
