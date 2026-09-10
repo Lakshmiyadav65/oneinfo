@@ -11,6 +11,10 @@ class VideoGenerationRequest(BaseModel):
     # Veo bills these on a pricier tier, so they are only ever attached when
     # the project actually calls for the creator's face.
     reference_images: list[bytes] = []
+    # "16:9" or "9:16". Veo defaults to 16:9, so a vertical project has to
+    # say so here - naming the ratio inside the prompt text does not change
+    # the pixels that come back.
+    aspect_ratio: str = "16:9"
 
 
 class VideoJobStatus(BaseModel):

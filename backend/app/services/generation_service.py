@@ -293,6 +293,14 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                         # Only on-camera scenes carry the face, so only they
                         # get routed to the pricier reference model.
                         reference_images=face_images if scene.features_creator else [],
+                        # Matched to the size the scenes are stitched at, so
+                        # a vertical project never pays for clips that get
+                        # pillarboxed at render.
+                        aspect_ratio=(
+                            "9:16"
+                            if settings.video_height > settings.video_width
+                            else "16:9"
+                        ),
                     )
                 )
                 await _wait_for_completion(video_provider, provider_job_id)
