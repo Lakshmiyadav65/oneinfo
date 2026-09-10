@@ -318,14 +318,16 @@ function ScriptEditor({
     setIsApproving(true);
     try {
       await approveScript(projectId);
-      onChanged();
+      // Straight on to the storyboard, which builds itself on arrival.
+      // Approving is the creator saying this script is the one; landing them
+      // back on it with a Continue button asks them to say so twice.
+      router.push(`/create/${projectId}/storyboard`);
     } catch (err) {
       toast({
         variant: "destructive",
         title: "Couldn't approve script",
         description: errorDescription(err),
       });
-    } finally {
       setIsApproving(false);
     }
   }

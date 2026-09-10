@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Spinner } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
@@ -69,6 +70,10 @@ export function StoryboardView({ projectId }: { projectId: string }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [override, setOverride] = useState<Storyboard | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [autoFailed, setAutoFailed] = useState<string | null>(null);
+  // Same guard as the script step: set synchronously so a re-render cannot
+  // schedule a second call, and surviving StrictMode's double effect.
+  const startedFor = useRef<string | null>(null);
 
   const storyboard =
     override ?? (storyboardQuery.status === "success" ? storyboardQuery.data : null);
@@ -86,6 +91,35 @@ export function StoryboardView({ projectId }: { projectId: string }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storyboard?.id]);
+
+  // Approving the script is the creator saying "build this", so the
+  // storyboard writes itself on arrival rather than offering a button that
+  // asks the same question again. Only when none exists: coming back to this
+  // step must never quietly replace a storyboard already worked on, since
+  // the on-camera toggles live on those scenes.
+  const needsStoryboard = storyboardQuery.status === "success" && !storyboard;
+
+  useEffect(() => {
+    if (!needsStoryboard || startedFor.current === projectId) return;
+    startedFor.current = projectId;
+    setAutoFailed(null);
+    setIsGenerating(true);
+    generateStoryboard(projectId)
+      .then(() => storyboardQuery.retry())
+      .catch((err: unknown) => {
+        // Not retried on its own: every attempt is a paid model call.
+        setAutoFailed(errorDescription(err) ?? "The storyboard couldn't be built.");
+      })
+      .finally(() => setIsGenerating(false));
+    // storyboardQuery.retry is a new function each render and would re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsStoryboard, projectId]);
+
+  function retryGeneration() {
+    startedFor.current = null;
+    setAutoFailed(null);
+    storyboardQuery.retry();
+  }
 
   if (project.status === "loading") {
     return (
@@ -153,20 +187,28 @@ export function StoryboardView({ projectId }: { projectId: string }) {
         <ErrorState description={storyboardQuery.message} onRetry={storyboardQuery.retry} />
       )}
 
-      {storyboardQuery.status === "success" && !storyboard && (
+      {needsStoryboard && !autoFailed && (
         <Card>
-          <CardContent className="flex flex-col items-start gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <CardContent className="flex items-center gap-3 p-6">
+            <Spinner />
             <div>
-              <h3 className="text-base font-semibold text-foreground">Storyboard</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Generate a scene-by-scene storyboard from the approved script.
+              <p className="text-sm font-medium text-foreground">
+                Building your storyboard
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Breaking the approved script into scenes. This takes a few seconds.
               </p>
             </div>
-            <Button onClick={handleGenerate} isLoading={isGenerating}>
-              Generate Storyboard
-            </Button>
           </CardContent>
         </Card>
+      )}
+
+      {needsStoryboard && autoFailed && (
+        <ErrorState
+          title="Couldn't build the storyboard"
+          description={autoFailed}
+          onRetry={retryGeneration}
+        />
       )}
 
       {storyboard && (
