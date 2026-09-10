@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Download } from "lucide-react";
 import Link from "next/link";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { getProject } from "@/lib/api/projects";
@@ -160,6 +161,16 @@ export function GenerateView({ projectId }: { projectId: string }) {
     );
   }
 
+  // Named after the project so a folder of downloads is still legible a
+  // week later. Punctuation out, because it lands in a filename.
+  //
+  // Marks are kept alongside letters and digits: Telugu vowel signs are
+  // marks, not letters, and dropping them turned "తెలుగు" into "త-ల-గ".
+  const downloadName =
+    project.data.title
+      .replace(/[^\p{L}\p{N}\p{M}]+/gu, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60) || "video";
   const duration = formatDuration(output?.duration_seconds ?? null);
   const size = formatSize(output?.file_size_bytes ?? null);
   const summary = [
@@ -274,14 +285,27 @@ export function GenerateView({ projectId }: { projectId: string }) {
                     <video controls src={videoUrl} className="w-full rounded-md" />
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <p className="text-xs text-muted-foreground">{summary}</p>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setAskingSettings(true)}
-                        isLoading={isStarting}
-                      >
-                        Regenerate
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/*
+                          The point of the whole workflow. It was buried
+                          behind the player's own overflow menu, which is
+                          browser-dependent and absent on some of them.
+                        */}
+                        <Button size="sm" asChild>
+                          <a href={videoUrl} download={`${downloadName}.mp4`}>
+                            <Download className="size-4" />
+                            Download video
+                          </a>
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setAskingSettings(true)}
+                          isLoading={isStarting}
+                        >
+                          Regenerate
+                        </Button>
+                      </div>
                     </div>
                   </>
                 )}

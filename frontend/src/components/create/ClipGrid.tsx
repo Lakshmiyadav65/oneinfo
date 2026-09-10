@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Check, Film } from "lucide-react";
+import { AlertTriangle, Check, Download, Film } from "lucide-react";
 import { getSceneClip, getSceneTakes, selectSceneTake } from "@/lib/api/generation";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -187,6 +187,21 @@ function ClipTile({
       <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
         {scene.voiceover}
       </p>
+
+      {/*
+        Per clip, not only for the finished video. A creator who wants one
+        shot for something else should not have to re-cut the whole export.
+      */}
+      {clipUrl && (
+        <a
+          href={clipUrl}
+          download={`clip-${index + 1}${takeCount > 1 ? `-take-${take + 1}` : ""}.mp4`}
+          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Download className="size-3.5" aria-hidden="true" />
+          Download
+        </a>
+      )}
     </div>
   );
 }
