@@ -26,3 +26,18 @@ export const DEFAULT_OUTPUT_SETTINGS: OutputSettings = {
   model_tier: "lite",
   takes: 1,
 };
+
+/**
+ * The current selection in one line: "Video · 9:16 · 720p · x2".
+ *
+ * Worth having because the settings live behind a dialog now. Without a
+ * readout, the only way to know what the next run will produce is to open
+ * the dialog and look, which is the thing moving it there was meant to stop.
+ */
+export function summarizeOutput(output: OutputSettings): string {
+  const parts = ["Video", output.aspect_ratio, output.resolution];
+  if (output.model_tier === "fast") parts.push("higher quality");
+  if (output.takes > 1) parts.push(`x${output.takes}`);
+  return parts.join(" · ");
+}
+

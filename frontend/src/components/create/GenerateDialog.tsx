@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/Toast";
 import { OutputSettingsPanel } from "@/components/create/OutputSettingsPanel";
 import { setOutputSettings } from "@/lib/api/projects";
 import { sceneCost, storyboardCost } from "@/lib/workflow/scene-cost";
+import { summarizeOutput } from "@/types/output-settings";
 import type { OutputSettings } from "@/types/output-settings";
 import type { Storyboard, StoryboardScene } from "@/types/storyboard";
 
@@ -107,7 +108,12 @@ function GenerateDialogBody({
           onChange={setDraft}
         />
 
-      <DialogFooter>
+      <DialogFooter className="items-center">
+        {/* Flow puts this readout next to its send button, and it earns its
+            place: it is the whole selection in one glance. */}
+        <span className="mr-auto hidden text-xs tabular-nums text-muted-foreground sm:block">
+          {summarizeOutput(draft)}
+        </span>
         <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>
           Cancel
         </Button>

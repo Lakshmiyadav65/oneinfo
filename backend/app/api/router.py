@@ -8,6 +8,7 @@ from app.api.routes import (
     health,
     hooks,
     knowledge,
+    media,
     projects,
     script,
     storyboard,
@@ -26,3 +27,4 @@ api_router.include_router(script.router)
 api_router.include_router(tanglish.router)
 api_router.include_router(storyboard.router)
 api_router.include_router(generation.router)
+api_router.include_router(media.router)

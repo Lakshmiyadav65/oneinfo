@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   BookOpen,
   Wand2,
+  Clapperboard,
   FolderKanban,
   Settings,
   type LucideIcon,
@@ -19,6 +20,7 @@ export const primaryNavItems: NavItem[] = [
   { label: "My Knowledge", href: "/knowledge", icon: BookOpen },
   { label: "Create Video", href: "/create", icon: Wand2 },
   { label: "Projects", href: "/projects", icon: FolderKanban },
+  { label: "Media", href: "/media", icon: Clapperboard },
 ];
 
 export const secondaryNavItems: NavItem[] = [
