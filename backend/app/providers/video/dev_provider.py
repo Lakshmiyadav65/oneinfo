@@ -21,9 +21,13 @@ class DevVideoProvider:
     VeoVideoProvider for real generated video.
     """
 
-    # FFmpeg renders any length, so dev runs are never snapped.
-    supported_durations: tuple[int, ...] | None = None
-    reference_supported_durations: tuple[int, ...] | None = None
+    # FFmpeg would render any length, but dev deliberately borrows Veo's
+    # constraint anyway. A storyboard planned in dev mode is planned for
+    # real: without this, a 45s dev storyboard silently became 32s the
+    # moment the provider was switched back, and the creator found out
+    # from the finished video.
+    supported_durations: tuple[int, ...] | None = (4, 6, 8)
+    reference_supported_durations: tuple[int, ...] | None = (8,)
 
     def __init__(self, settings: Settings):
         self._settings = settings

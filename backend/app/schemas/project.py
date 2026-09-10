@@ -11,7 +11,10 @@ from app.schemas.environment import SceneEnvironment
 class ProjectCreateIn(BaseModel):
     idea: str
     title: str | None = None
-    language: Literal["english", "tenglish", "telugu"] = "english"
+    # Omitted by the UI, which no longer asks: the language picker moved to
+    # the workflow header. None means "carry over whatever they made last
+    # time" rather than "english" — see project_service.create_project.
+    language: Literal["english", "tenglish", "telugu"] | None = None
 
 
 class ProjectUpdateIn(BaseModel):
