@@ -1,15 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Download } from "lucide-react";
+import { AlertTriangle, Check, Download, Mic } from "lucide-react";
 import {
   generateScene,
   getGenerationStatus,
   getSceneClip,
   getSceneTakes,
   selectSceneTake,
+  voiceScene,
 } from "@/lib/api/generation";
-import type { SceneTake } from "@/lib/api/generation";
+import type { SceneTake, SceneVoice } from "@/lib/api/generation";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -59,6 +60,8 @@ export function ScenePreview({
   const [takes, setTakes] = useState<SceneTake[]>([]);
   const [selected, setSelected] = useState(scene.selected_take);
   const [clips, setClips] = useState<Record<number, string>>({});
+  const [voicing, setVoicing] = useState(false);
+  const [voice, setVoice] = useState<SceneVoice | null>(null);
 
   // Held outside state so cleanup can revoke them without depending on the
   // render that created them.
@@ -160,6 +163,38 @@ export function ScenePreview({
     );
   }, [takes]);
 
+  async function addTheRealVoice() {
+    setVoicing(true);
+    try {
+      const result = await voiceScene(projectId, sceneId);
+      setVoice(result);
+
+      // The clip route now serves the voiced file for this take, so the one
+      // held here is the old audio. Dropped rather than kept: the whole
+      // point is to hear the difference straight away.
+      const held = objectUrls.current.get(selected);
+      if (held) {
+        URL.revokeObjectURL(held);
+        objectUrls.current.delete(selected);
+        setClips((current) => {
+          const rest = { ...current };
+          delete rest[selected];
+          return rest;
+        });
+      }
+      // Re-read under a fresh list identity so the loading effect runs again.
+      setTakes((current) => [...current]);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't add the voice",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setVoicing(false);
+    }
+  }
+
   async function chooseTake(takeIndex: number) {
     const previous = selected;
     // Switched immediately: picking a take is free and reversible, and the
@@ -238,7 +273,24 @@ export function ScenePreview({
         >
           {hasClip ? "Regenerate this scene" : "Generate this scene"}
         </Button>
-        {!running && (
+        {/*
+          Free, and the button says so. Veo speaks its own lines and speaks
+          Telugu badly; this replaces that reading with a real one and never
+          touches the video provider, so trying it costs nothing.
+        */}
+        {hasClip && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={running || voicing}
+            isLoading={voicing}
+            onClick={() => void addTheRealVoice()}
+          >
+            <Mic className="size-3.5" aria-hidden="true" />
+            {voice ? "Redo the voice" : "Add the real voice"}
+          </Button>
+        )}
+        {!running && !voicing && (
           <span className="text-xs text-muted-foreground">
             Just this scene —{" "}
             {sceneCost(scene.duration_seconds, scene.features_creator, output)}
@@ -246,6 +298,26 @@ export function ScenePreview({
           </span>
         )}
       </div>
+
+      {/*
+        Said plainly, because no amount of speeding up fixes it. Veo makes
+        clips of 4, 6 or 8 seconds and nothing else, so a line written longer
+        than its scene has to be shortened.
+      */}
+      {voice?.overruns && (
+        <div className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <AlertTriangle
+            className="mt-0.5 size-4 shrink-0 text-destructive"
+            aria-hidden="true"
+          />
+          <p className="text-xs text-foreground">
+            This line takes {voice.spoken_seconds.toFixed(1)}s to say and the scene
+            is {voice.clip_seconds.toFixed(0)}s, so the last{" "}
+            {voice.overrun_seconds.toFixed(1)}s is cut off. Shorten the dialogue,
+            or give the scene a longer clip.
+          </p>
+        </div>
+      )}
 
       {/*
         A named stage against a spinner, not a disabled button. Generation

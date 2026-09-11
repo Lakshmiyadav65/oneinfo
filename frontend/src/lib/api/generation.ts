@@ -130,3 +130,26 @@ export function startStitch(projectId: string): Promise<GenerationJob> {
   return api.post<GenerationJob>(`/projects/${projectId}/stitch`, {});
 }
 
+/**
+ * What the voice pass produced, and whether the line actually fits.
+ *
+ * The timings matter because Veo only makes clips of 4, 6 or 8 seconds. A
+ * line written longer than its scene cannot be made to fit by any amount of
+ * speeding up, and shortening it is the only fix that does not make
+ * something worse.
+ */
+export type SceneVoice = {
+  clip_seconds: number;
+  spoken_seconds: number;
+  pace: number;
+  overruns: boolean;
+  overrun_seconds: number;
+};
+
+/**
+ * Says the scene's line over the clip it already has, replacing the voice
+ * Veo generated. Calls the video provider zero times, so it is free.
+ */
+export function voiceScene(projectId: string, sceneId: string): Promise<SceneVoice> {
+  return api.post<SceneVoice>(`/projects/${projectId}/scenes/${sceneId}/voice`, {});
+}
