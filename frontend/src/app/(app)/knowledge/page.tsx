@@ -91,6 +91,7 @@ export default function KnowledgePage() {
       <KnowledgeViewerDialog
         item={viewing}
         onOpenChange={(open) => !open && setViewing(null)}
+        onChanged={knowledge.retry}
       />
 
       {knowledge.status === "loading" && (

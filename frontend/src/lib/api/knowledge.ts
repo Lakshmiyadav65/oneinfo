@@ -74,6 +74,22 @@ export function getKnowledge(id: string): Promise<KnowledgeDetail> {
   return api.get<KnowledgeDetail>(`/knowledge/${id}`);
 }
 
+/**
+ * Saves a correction. Comes back "processing" — the text is stored at once,
+ * and the re-chunking that makes it findable happens after the response.
+ */
+export function updateKnowledgeContent(id: string, content: string): Promise<KnowledgeItem> {
+  return api.patch<KnowledgeItem>(`/knowledge/${id}`, { content });
+}
+
+/** Reads the same reel again in another language. Links only. */
+export function retranscribeKnowledge(
+  id: string,
+  language: ProjectLanguage
+): Promise<KnowledgeItem> {
+  return api.post<KnowledgeItem>(`/knowledge/${id}/retranscribe`, { language });
+}
+
 export function deleteKnowledge(id: string): Promise<void> {
   return api.delete<void>(`/knowledge/${id}`);
 }

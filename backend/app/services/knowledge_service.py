@@ -123,6 +123,65 @@ async def create_pending_document(
     return document
 
 
+# How much of an edited transcript is kept as the standing summary. Matches
+# reel_ingestion.MAX_SUMMARY_CHARS - the same cap, for the same reason.
+MAX_SUMMARY_CHARS = 2000
+
+
+def summarise_for_prompts(content: str) -> str:
+    """
+    The document, trimmed to what a prompt should be handed as fact.
+
+    Only used for transcripts, where the summary is the words themselves
+    with a provenance header. A page read from a link has takeaways written
+    by a model instead, and truncating its text would replace something
+    considered with something merely short.
+    """
+    trimmed = content.strip()
+    if len(trimmed) <= MAX_SUMMARY_CHARS:
+        return trimmed
+    return trimmed[:MAX_SUMMARY_CHARS].rstrip() + "\n[transcript continues]"
+
+
+async def save_edited_content(
+    db: AsyncSession, creator_id: str, document_id: uuid.UUID, content: str
+) -> KnowledgeDocument:
+    """
+    Takes a correction and marks the document for re-reading.
+
+    Writes the text now so the editor closes on what was actually typed, and
+    leaves the chunking and embedding to the background - it is the slow
+    half, and the same half every other way into this table defers.
+
+    The summary is rewritten alongside it for a transcript, because there it
+    *is* the transcript and a stale copy would keep feeding the mistake to
+    every prompt that cites the source. A link's takeaways are left alone;
+    they were written by a model from the page, and replacing them with
+    truncated text on an unrelated edit would be a downgrade.
+    """
+    document = await get_owned_document(db, creator_id, document_id)
+    document.content = content
+    if document.source_type in (KnowledgeSourceType.reel, KnowledgeSourceType.video):
+        document.summary = summarise_for_prompts(content)
+    document.status = KnowledgeStatus.processing
+    document.error_message = None
+    await db.commit()
+    await db.refresh(document)
+    return document
+
+
+async def mark_reprocessing(
+    db: AsyncSession, creator_id: str, document_id: uuid.UUID
+) -> KnowledgeDocument:
+    """Puts a document back into processing before it is read again."""
+    document = await get_owned_document(db, creator_id, document_id)
+    document.status = KnowledgeStatus.processing
+    document.error_message = None
+    await db.commit()
+    await db.refresh(document)
+    return document
+
+
 async def delete_document(db: AsyncSession, creator_id: str, document_id: uuid.UUID) -> None:
     document = await get_owned_document(db, creator_id, document_id)
     await db.delete(document)

@@ -216,6 +216,18 @@ pins that set equal to the project languages so the two cannot drift. Unasked,
 a reel follows the creator's most recent project, the same guess a new project
 makes.
 
+A transcript is editable, because speech models get names wrong in a
+particular way: not randomly, but identically at every mention — a product
+said quickly comes back as the nearest thing the model has heard before, and
+comes back that way each time. `PATCH /knowledge/{id}` saves the correction
+and re-runs the same ingestion pipeline, which replaces the stored chunks
+rather than adding to them (otherwise retrieval would answer from both the
+correction and the mistake). For a transcript the summary is rewritten too,
+since there it *is* the transcript; a link's model-written takeaways are left
+alone. `POST /knowledge/{id}/retranscribe` reads a reel again in another
+language, and is refused for an uploaded video — only the transcript was
+kept, so there is nothing to read.
+
 Two of those mappings are not the obvious one:
 
 - **Tenglish is `translit`, not `transcribe`.** The app defines Tenglish as

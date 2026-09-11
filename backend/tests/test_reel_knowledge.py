@@ -383,6 +383,98 @@ async def test_another_creators_reel_is_not_mistaken_for_your_own(
     assert resp.json()["reels"][0]["already_added"] is False
 
 
+def test_an_edited_transcript_is_capped_before_it_becomes_the_summary():
+    """The summary is read into any prompt citing this source, so a long
+    correction must not be able to push a wall of text into all of them."""
+    from app.services.knowledge_service import MAX_SUMMARY_CHARS, summarise_for_prompts
+
+    assert summarise_for_prompts("  short  ") == "short"
+    long_one = summarise_for_prompts("word " * 4000)
+    assert len(long_one) < MAX_SUMMARY_CHARS + 200
+    assert "[transcript continues]" in long_one
+
+
+async def test_saving_a_correction_replaces_the_old_pieces(client, seeded_dev_creators):
+    """
+    Re-ingestion runs through the same pipeline as the first pass, so the
+    old chunks have to go. Left behind, retrieval would answer from both the
+    correction and the mistake it replaced — and the mistake would look just
+    as authoritative.
+    """
+    headers = auth_headers("creator-a")
+    created = await client.post(
+        "/knowledge/text",
+        json={"title": "Notes", "content": "MagMain is great. I use MagMain daily."},
+        headers=headers,
+    )
+    document_id = created.json()["id"]
+    before = await client.get(f"/knowledge/{document_id}", headers=headers)
+
+    resp = await client.patch(
+        f"/knowledge/{document_id}",
+        json={"content": "Mac Mini is great. I use Mac Mini daily."},
+        headers=headers,
+    )
+
+    assert resp.status_code == 200, resp.text
+    after = await client.get(f"/knowledge/{document_id}", headers=headers)
+    assert "MagMain" not in after.json()["content"]
+    assert after.json()["content"].count("Mac Mini") == 2
+    assert after.json()["chunk_count"] == before.json()["chunk_count"]
+
+
+async def test_a_document_cannot_be_emptied_by_editing(client, seeded_dev_creators):
+    """Deleting is a different, reversible-looking action with its own
+    button. Saving nothing should not quietly become one."""
+    headers = auth_headers("creator-a")
+    created = await client.post(
+        "/knowledge/text", json={"title": "Notes", "content": "something"}, headers=headers
+    )
+
+    resp = await client.patch(
+        f"/knowledge/{created.json()['id']}", json={"content": "   "}, headers=headers
+    )
+
+    assert resp.status_code == 422, resp.text
+
+
+async def test_an_uploaded_video_cannot_be_read_again(client, seeded_dev_creators):
+    """
+    Only the transcript was kept, not the video, so there is nothing to
+    re-read. Refused here with the reason rather than failing later in a
+    background task where nobody is watching.
+    """
+    headers = auth_headers("creator-a")
+    created = await client.post(
+        "/knowledge/text", json={"title": "Pasted", "content": "words"}, headers=headers
+    )
+
+    resp = await client.post(
+        f"/knowledge/{created.json()['id']}/retranscribe",
+        json={"language": "telugu"},
+        headers=headers,
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "upload" in resp.json()["error"]["message"].lower()
+
+
+async def test_another_creator_cannot_edit_your_document(client, seeded_dev_creators):
+    created = await client.post(
+        "/knowledge/text",
+        json={"title": "Mine", "content": "private notes"},
+        headers=auth_headers("creator-a"),
+    )
+
+    resp = await client.patch(
+        f"/knowledge/{created.json()['id']}",
+        json={"content": "tampered"},
+        headers=auth_headers("creator-b"),
+    )
+
+    assert resp.status_code == 404, resp.text
+
+
 async def test_a_file_that_is_not_a_video_is_refused_before_anything_is_spooled(
     client, seeded_dev_creators
 ):

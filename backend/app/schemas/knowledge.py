@@ -39,6 +39,18 @@ class KnowledgeTextIn(BaseModel):
     content: str
 
 
+class KnowledgeContentIn(BaseModel):
+    """A corrected document body, replacing what is stored."""
+
+    content: str = Field(min_length=1)
+
+
+class KnowledgeRetranscribeIn(BaseModel):
+    """Read the same video again, writing it in a different language."""
+
+    language: Literal["english", "tenglish", "telugu"]
+
+
 class KnowledgeStructureIn(BaseModel):
     """A raw paste to be reorganised — no title, the agent proposes one per section."""
 

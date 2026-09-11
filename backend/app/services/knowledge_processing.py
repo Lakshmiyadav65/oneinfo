@@ -1,6 +1,8 @@
 import asyncio
 import uuid
 
+from sqlalchemy import delete
+
 from app.core.config import get_settings
 from app.db.base import get_session_factory
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument, KnowledgeStatus
@@ -16,6 +18,10 @@ async def process_knowledge_document(document_id: uuid.UUID, raw_text: str | Non
     raw_text is already given, e.g. pasted text) -> chunk -> embed -> store
     chunks, then marks the document ready or failed. Owns its own DB
     session since it may run after the originating request has finished.
+
+    Safe to run again on a document that already has chunks - editing a
+    transcript and re-transcribing one both come back through here, and both
+    replace what was stored rather than adding to it.
     """
     settings = get_settings()
     session_factory = get_session_factory()
@@ -39,6 +45,13 @@ async def process_knowledge_document(document_id: uuid.UUID, raw_text: str | Non
             chunks = chunk_text(text, settings.chunk_size_words, settings.chunk_overlap_words)
             if not chunks:
                 raise ValueError("No extractable text content.")
+
+            # This runs again whenever a document is edited or re-transcribed,
+            # so the old pieces have to go or retrieval would answer from both
+            # the correction and the mistake it replaced.
+            await db.execute(
+                delete(KnowledgeChunk).where(KnowledgeChunk.document_id == document.id)
+            )
 
             # Kept as written, before chunking flattens the whitespace out of
             # it. This is what gets shown when someone opens the document.

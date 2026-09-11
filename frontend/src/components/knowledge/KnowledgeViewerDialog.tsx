@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Languages, Pencil } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,11 +9,21 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { Segmented } from "@/components/ui/Segmented";
+import { KnowledgeEditor } from "@/components/knowledge/KnowledgeEditor";
+import { useToast } from "@/components/ui/Toast";
+import { ApiError } from "@/lib/api/client";
 import { Spinner } from "@/components/ui/Spinner";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { getKnowledge } from "@/lib/api/knowledge";
+import {
+  getKnowledge,
+  retranscribeKnowledge,
+  updateKnowledgeContent,
+} from "@/lib/api/knowledge";
 import type { KnowledgeDetail, KnowledgeItem } from "@/types/knowledge";
+import { PROJECT_LANGUAGES, type ProjectLanguage } from "@/types/project";
 
 /**
  * What one knowledge document actually says.
@@ -86,11 +96,23 @@ function splitHeader(content: string): { fields: [string, string][]; body: strin
 export function KnowledgeViewerDialog({
   item,
   onOpenChange,
+  onChanged,
 }: {
   /** The row that was clicked, or null when nothing is open. */
   item: KnowledgeItem | null;
   onOpenChange: (open: boolean) => void;
+  /** Called after an edit or a re-read, so the list can pick up the new status. */
+  onChanged: () => void;
 }) {
+  const { toast } = useToast();
+  // Non-null while editing, holding the draft. Separate from the loaded
+  // document so cancelling is just dropping it.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  // The language a re-read would use. Defaults to the app's own default
+  // rather than to whatever this transcript happens to be in — the reason
+  // to open this fold is usually that the current one is wrong.
+  const [target, setTarget] = useState<ProjectLanguage>("tenglish");
   // What was loaded, stamped with the document it belongs to. Keeping the id
   // alongside the result is what makes showing the wrong text impossible
   // rather than merely unlikely: open a second document while the first is
@@ -128,10 +150,77 @@ export function KnowledgeViewerDialog({
     };
   }, [id]);
 
+  // Opening a different row must not carry a half-finished correction
+  // across to it. Keyed the same way the loaded content is.
+  const [draftFor, setDraftFor] = useState<string | null>(null);
+  const editing = draft !== null && draftFor === id;
+
   const current = loaded && loaded.id === id ? loaded : null;
   const detail = current?.detail ?? null;
   const error = current?.error ?? null;
   const { fields, body } = splitHeader(detail?.content ?? "");
+
+  const canRetranscribe = item?.source_type === "reel" && Boolean(item.source_url);
+
+  function startEditing() {
+    if (!detail || !id) return;
+    // The whole stored text, header included. The header is part of what
+    // gets embedded, so hiding it from the editor would mean a correction
+    // to a misheard name in the title line could not be made at all.
+    setDraft(detail.content);
+    setDraftFor(id);
+  }
+
+  function stopEditing() {
+    setDraft(null);
+    setDraftFor(null);
+  }
+
+  async function save() {
+    if (!id || draft === null) return;
+    setBusy(true);
+    try {
+      await updateKnowledgeContent(id, draft);
+      // Dropped rather than kept: the document is now being re-chunked, and
+      // what comes back from the server is the thing to trust.
+      setLoaded(null);
+      stopEditing();
+      onChanged();
+      toast({
+        title: "Correction saved",
+        description: "It is being re-read now, and the AI will use the corrected version.",
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't save",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retranscribe(language: ProjectLanguage) {
+    if (!id) return;
+    setBusy(true);
+    try {
+      await retranscribeKnowledge(id, language);
+      setLoaded(null);
+      stopEditing();
+      onChanged();
+      toast({
+        title: "Reading it again",
+        description: "The reel is being downloaded and transcribed in the new language.",
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't re-read that",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <Dialog open={item !== null} onOpenChange={onOpenChange}>
@@ -201,13 +290,21 @@ export function KnowledgeViewerDialog({
                 </dl>
               )}
 
-              {body ? (
+              {editing ? (
+                <KnowledgeEditor value={draft} onChange={setDraft} disabled={busy} />
+              ) : body ? (
                 <div>
-                  <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {item?.source_type === "reel" || item?.source_type === "video"
-                      ? "Transcript"
-                      : "Content"}
-                  </h3>
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {item?.source_type === "reel" || item?.source_type === "video"
+                        ? "Transcript"
+                        : "Content"}
+                    </h3>
+                    <Button size="sm" variant="ghost" onClick={startEditing} disabled={busy}>
+                      <Pencil className="size-3.5" />
+                      Edit
+                    </Button>
+                  </div>
                   {/*
                     Prose, not monospace. This is speech, and a proportional
                     face at a readable size is how you tell whether a
@@ -235,7 +332,7 @@ export function KnowledgeViewerDialog({
                 Still reachable, because it is what a prompt is handed as
                 fact and that is worth being able to check.
               */}
-              {detail.summary && (
+              {!editing && detail.summary && (
                 <Disclosure
                   title="Summary given to the AI"
                   summary="What gets quoted as fact when this source is used"
@@ -245,9 +342,71 @@ export function KnowledgeViewerDialog({
                   </p>
                 </Disclosure>
               )}
+
+              {/*
+                Reading the reel again, rather than correcting this text.
+                Kept below the editor and behind its own fold because it
+                throws away every correction made so far and costs another
+                download and another transcription — it is the answer to "I
+                picked the wrong language", not to "this word is wrong".
+              */}
+              {!editing && canRetranscribe && (
+                <Disclosure
+                  title="Read it again in another language"
+                  summary="Replaces this transcript"
+                >
+                  {/*
+                    Picking a language and re-reading are two actions on
+                    purpose. One click here costs a download and a paid
+                    transcription and discards every correction already
+                    saved, which is far too much to hang off brushing past a
+                    segmented control.
+                  */}
+                  <Segmented
+                    label="Transcribe the reel as"
+                    value={target}
+                    disabled={busy}
+                    onChange={setTarget}
+                    options={PROJECT_LANGUAGES.map(({ value, label, hint }) => ({
+                      value,
+                      label,
+                      hint,
+                    }))}
+                  />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    This downloads and transcribes the reel again, and replaces what is
+                    here — including any corrections you have saved.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="mt-2"
+                    disabled={busy}
+                    onClick={() => void retranscribe(target)}
+                  >
+                    {busy ? <Spinner className="size-4" /> : <Languages className="size-3.5" />}
+                    Read it again in {PROJECT_LANGUAGES.find((l) => l.value === target)?.label}
+                  </Button>
+                </Disclosure>
+              )}
             </>
           )}
         </div>
+
+        {editing && (
+          <div className="flex shrink-0 items-center gap-2 border-t border-border pt-3">
+            <Button onClick={() => void save()} disabled={busy || !draft.trim()}>
+              {busy && <Spinner className="size-4" />}
+              Save correction
+            </Button>
+            <Button variant="ghost" onClick={stopEditing} disabled={busy}>
+              Cancel
+            </Button>
+            <span className="ml-auto text-xs text-muted-foreground">
+              Saved edits are what the AI writes from
+            </span>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

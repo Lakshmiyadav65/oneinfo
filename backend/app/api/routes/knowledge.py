@@ -22,11 +22,13 @@ from app.providers.reels import is_video_url
 from app.providers.storage import get_storage_provider
 from app.schemas.knowledge import (
     KnowledgeBulkIn,
+    KnowledgeContentIn,
     KnowledgeDetailOut,
     KnowledgeDocumentOut,
     KnowledgePartOut,
     KnowledgeReelsIn,
     KnowledgeReelsOut,
+    KnowledgeRetranscribeIn,
     KnowledgeSectionOut,
     KnowledgeStructureIn,
     KnowledgeStructureOut,
@@ -311,6 +313,72 @@ async def get_knowledge(
         chunk_count=chunk_count,
         summary=document.summary,
     )
+
+
+@router.patch("/{document_id}", response_model=KnowledgeDocumentOut)
+async def edit_knowledge(
+    document_id: uuid.UUID,
+    payload: KnowledgeContentIn,
+    background_tasks: BackgroundTasks,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeDocument:
+    """
+    Saves a correction to what a document says.
+
+    Transcription gets names wrong — a product said quickly comes back as
+    something that sounds like it, and no amount of tuning fixes a word the
+    model has never heard. Until now that mistake was permanent and silently
+    became something the agents wrote from.
+
+    Comes back "processing": the text is stored immediately, and the chunking
+    and embedding that make it findable happen after the response, the same
+    way every other write to this table does.
+    """
+    if not payload.content.strip():
+        raise ValidationAppError("A document cannot be emptied. Delete it instead.")
+
+    document = await knowledge_service.save_edited_content(
+        db, creator.id, document_id, payload.content
+    )
+    background_tasks.add_task(process_knowledge_document, document.id, payload.content)
+    return document
+
+
+@router.post("/{document_id}/retranscribe", response_model=KnowledgeDocumentOut, status_code=202)
+async def retranscribe_knowledge(
+    document_id: uuid.UUID,
+    payload: KnowledgeRetranscribeIn,
+    background_tasks: BackgroundTasks,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeDocument:
+    """
+    Reads the same reel again, written in a different language.
+
+    Only possible where the video can be fetched again, which means a link.
+    An uploaded file is transcribed and discarded — keeping every creator's
+    source video on the chance they might switch language later is a lot of
+    storage against a small chance — so that case is refused with the reason
+    rather than failing later in the background where nobody is looking.
+    """
+    document = await knowledge_service.get_owned_document(db, creator.id, document_id)
+
+    if document.source_type != KnowledgeSourceType.reel or not document.source_url:
+        raise ValidationAppError(
+            "Only a reel added by link can be read again — the uploaded video "
+            "was not kept, only its transcript. Upload it again to change the "
+            "language, or edit the text directly."
+        )
+
+    await knowledge_service.mark_reprocessing(db, creator.id, document_id)
+    background_tasks.add_task(
+        transcribe_into_knowledge,
+        document.id,
+        url=document.source_url,
+        language_key=payload.language,
+    )
+    return document
 
 
 @router.delete("/{document_id}", status_code=204)
