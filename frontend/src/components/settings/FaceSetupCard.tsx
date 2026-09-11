@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import {
   deleteFaceImage,
   getFaceSetup,
+  revokeFaceConsent,
   updateFaceDescriptions,
   uploadFaceImage,
 } from "@/lib/api/creator-face";
@@ -92,8 +94,12 @@ export function FaceSetupCard() {
           <div>
             <h3 className="text-base font-semibold text-foreground">Reference photos</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              What the video model actually works from. A recording fills these in for
-              you — upload them by hand if you&apos;d rather, or if you have no camera.
+              What the video model actually works from. Recording your avatar fills
+              these in, and that happens in{" "}
+              <Link href="/create" className="underline hover:text-foreground">
+                Create Video
+              </Link>
+              , where it is any use. Upload by hand here if you have no camera.
             </p>
           </div>
           <Badge variant={data.ready_for_generation ? "success" : "default"}>
@@ -172,15 +178,30 @@ export function FaceSetupCard() {
           </div>
         </div>
 
-        {/* Consent is asked for once, on the capture card above, which
-            renders whether or not a camera is available. Asking for the same
-            agreement twice on one screen reads as two different agreements. */}
-        {data.consent_granted && data.consent_at && (
-          <p className="border-t border-border pt-4 text-xs text-muted-foreground">
-            You agreed to your likeness being used on{" "}
-            {new Date(data.consent_at).toLocaleDateString()}. You can withdraw that
-            above at any time — your photos stay until you delete them.
-          </p>
+        {/* Consent is GIVEN in the create flow, at the moment someone asks
+            to be in a video. It is WITHDRAWN here, because withdrawing is
+            not something anyone does while starting a video, and a decision
+            this one has to be reversible somewhere obvious. */}
+        {data.consent_granted && (
+          <div className="space-y-2 border-t border-border pt-4">
+            <p className="text-xs text-muted-foreground">
+              You agreed to your likeness being used to generate videos of you
+              {data.consent_at ? ` on ${new Date(data.consent_at).toLocaleDateString()}` : ""}.
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-0 text-destructive"
+              disabled={busy}
+              onClick={() => void run(() => revokeFaceConsent(), "Couldn't withdraw that")}
+            >
+              Withdraw consent
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Stops you being generated into any new scene straight away. Your photos
+              and recording stay until you delete them.
+            </p>
+          </div>
         )}
 
         <div className="space-y-4 border-t border-border pt-5">
