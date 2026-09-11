@@ -12,6 +12,12 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Per-developer Claude Code settings. The shared ones (if any) belong in
+# .claude/settings.json; the .local. variant is one person's machine and
+# reached the repo once already by riding along in a merge.
+.claude/settings.local.json
+**/.claude/settings.local.json
+
 # Python (backend/, in case tools run from repo root)
 __pycache__/
 *.pyc

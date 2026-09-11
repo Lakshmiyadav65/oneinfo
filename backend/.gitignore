@@ -14,6 +14,10 @@ __pycache__/
 # local dev storage (LocalStorageProvider)
 data/
 
+# where `python -m app.cli.transcribe` writes by default — scratch output
+# from tuning a setting against a real video, not something to keep
+transcripts/
+
 # portable FFmpeg build (~200MB) — see README for how to fetch it
 tools/
 

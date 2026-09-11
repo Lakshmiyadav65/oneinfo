@@ -61,9 +61,3 @@ a run here is the run the server would have done.
 
 Set `TRANSCRIPTION_PROVIDER=sarvam` and `SARVAM_API_KEY` there, or the CLI
 says plainly that it is producing a `[DEV MODE]` placeholder.
-
-## `transcripts/`
-
-Sample output, kept from the original work as examples of what comes back
-from real reels — including a Telugu/English one, which is the case the
-whole pipeline is shaped around.
