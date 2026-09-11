@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Download, Film } from "lucide-react";
 import { setSceneInclusion } from "@/lib/api/storyboard";
 import { getSceneClip, getSceneTakes, selectSceneTake } from "@/lib/api/generation";
+import type { SceneTake } from "@/lib/api/generation";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/utils/cn";
@@ -70,7 +71,7 @@ function ClipTile({
 }) {
   const { toast } = useToast();
   const [clipUrl, setClipUrl] = useState<string | null>(null);
-  const [takeCount, setTakeCount] = useState(0);
+  const [takes, setTakes] = useState<SceneTake[]>([]);
   const [take, setTake] = useState(scene.selected_take);
   const objectUrl = useRef<string | null>(null);
 
@@ -86,7 +87,7 @@ function ClipTile({
     getSceneTakes(projectId, scene.id)
       .then((result) => {
         if (cancelled) return;
-        setTakeCount(result.takes);
+        setTakes(result.takes);
         setTake(result.selected_take);
       })
       // A scene that has never been generated answers 0 takes, or 404s on a
@@ -98,7 +99,7 @@ function ClipTile({
     };
   }, [projectId, scene.id, live]);
 
-  const hasClip = takeCount > 0;
+  const hasClip = takes.length > 0;
 
   useEffect(() => {
     if (!hasClip) return;
@@ -227,23 +228,29 @@ function ClipTile({
         Only shown when there is a choice. One take is not a decision, and a
         row of one button implies there should be more.
       */}
-      {takeCount > 1 && (
+      {takes.length > 1 && (
         <div className="flex flex-wrap gap-1" role="group" aria-label="Take">
-          {Array.from({ length: takeCount }, (_, index) => (
+          {/*
+            Keyed and chosen by the server's index, labelled by position.
+            The two differ once a scene has been regenerated: it then holds
+            takes 1 and 2, and a button reading "Take 0" names a clip that
+            was deleted.
+          */}
+          {takes.map((clip, position) => (
             <button
-              key={index}
+              key={clip.take_index}
               type="button"
-              aria-pressed={index === take}
-              onClick={() => void chooseTake(index)}
+              aria-pressed={clip.take_index === take}
+              onClick={() => void chooseTake(clip.take_index)}
               className={cn(
                 "rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                index === take
+                clip.take_index === take
                   ? "border-primary bg-primary/15 text-foreground"
                   : "border-border text-muted-foreground hover:bg-muted"
               )}
             >
-              Take {index + 1}
+              Take {position + 1}
             </button>
           ))}
         </div>
@@ -278,7 +285,11 @@ function ClipTile({
       {clipUrl && (
         <a
           href={clipUrl}
-          download={`clip-${index + 1}${takeCount > 1 ? `-take-${take + 1}` : ""}.mp4`}
+          download={`clip-${index + 1}${
+            takes.length > 1
+              ? `-take-${takes.findIndex((c) => c.take_index === take) + 1}`
+              : ""
+          }.mp4`}
           className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Download className="size-3.5" aria-hidden="true" />

@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -375,20 +376,29 @@ async def get_scene(
     return scene
 
 
-async def count_scene_takes(
+async def list_scene_takes(
     db: AsyncSession, creator_id: str, project_id: uuid.UUID, scene_id: uuid.UUID
-) -> int:
-    """How many takes of this scene are on hand to choose between."""
+) -> list[Asset]:
+    """
+    The clips on hand for this scene, oldest first.
+
+    Returns them rather than counting them. Take indices count up across runs
+    and old runs are dropped, so a scene on its second run holds takes 1 and
+    2 - a count would have the picker offering take 0, which no longer
+    exists, and hiding take 2, which does.
+    """
     await project_service.get_owned_project(db, creator_id, project_id)
     result = await db.execute(
-        select(func.count(func.distinct(Asset.take_index))).where(
+        select(Asset)
+        .where(
             Asset.project_id == project_id,
             Asset.scene_id == scene_id,
             Asset.creator_id == creator_id,
             Asset.asset_type == AssetType.scene_video,
         )
+        .order_by(Asset.take_index)
     )
-    return int(result.scalar_one() or 0)
+    return list(result.scalars().all())
 
 
 async def select_scene_take(
@@ -410,8 +420,12 @@ async def select_scene_take(
     if scene is None or scene.creator_id != creator_id:
         raise NotFoundError("No such scene in this storyboard.")
 
-    available = await count_scene_takes(db, creator_id, project_id, scene_id)
-    if take < 0 or take >= max(available, 1):
+    # Checked against the indices that exist rather than against a count.
+    # A scene on its second run holds takes 1 and 2, so "less than the
+    # number of takes" would refuse the newer clip and accept a deleted one.
+    takes = await list_scene_takes(db, creator_id, project_id, scene_id)
+    available = {asset.take_index for asset in takes} or {0}
+    if take not in available:
         raise ValidationAppError("That take hasn't been generated for this scene.")
 
     scene.selected_take = take
@@ -437,37 +451,83 @@ async def _wait_for_completion(
     raise GenerationError("Video generation timed out.")
 
 
-async def _discard_previous_takes(
-    db: AsyncSession,
-    storage,
-    project: Project,
-    scene: StoryboardScene,
-    new_take_count: int,
-) -> None:
+async def _next_take_index(db: AsyncSession, scene: StoryboardScene) -> int:
     """
-    Clears out a scene's earlier clips before its new ones are written.
+    Where this run's takes start numbering.
 
-    Rows always go, because the new run's keys overwrite the old files and a
-    row pointing at replaced content describes a clip that no longer exists.
-    Files only go when the new run has fewer takes than the old one, since
-    those higher-numbered keys are the only ones nothing is about to
-    overwrite.
+    Counting up across runs rather than restarting at zero is what lets one
+    scene hold two runs at once. Both starting at zero would write to the
+    same storage keys, so the new run would overwrite the clips the creator
+    is meant to be comparing it against, and `selected_take` would name two
+    different videos at the same time.
     """
     result = await db.execute(
-        select(Asset).where(
-            Asset.project_id == project.id,
+        select(func.max(Asset.take_index)).where(
             Asset.scene_id == scene.id,
             Asset.asset_type == AssetType.scene_video,
         )
     )
-    for asset in result.scalars().all():
-        if asset.take_index >= new_take_count:
-            # Best effort. A file that cannot be removed is an orphan taking
-            # up space, which is not worth failing a paid run over.
-            try:
-                await asyncio.to_thread(storage.delete, asset.storage_key)
-            except Exception:
-                pass
+    highest = result.scalar()
+    return 0 if highest is None else int(highest) + 1
+
+
+def _runs_to_discard(
+    takes: Sequence[tuple[int, uuid.UUID | None]], keep: int
+) -> set[uuid.UUID | None]:
+    """
+    Which runs a scene should let go of, from its (take index, run id) pairs.
+
+    Ordered on the take index rather than on a timestamp, because the index
+    is the thing that actually counts up: two runs committed in the same
+    second tie on created_at and would group in whatever order they came
+    back. Clips from before runs were recorded share a null id and count as
+    one run between them - the most that can honestly be said about them,
+    and it stops them being deleted one at a time.
+    """
+    runs: list[uuid.UUID | None] = []
+    for _, run_id in sorted(takes, key=lambda pair: pair[0], reverse=True):
+        if run_id not in runs:
+            runs.append(run_id)
+    return set(runs[keep:])
+
+
+async def _discard_runs_beyond(
+    db: AsyncSession, storage, scene: StoryboardScene, keep: int
+) -> None:
+    """
+    Keeps a scene's `keep` most recent runs and deletes every run before
+    them, files included.
+
+    Regenerating used to delete the clip it replaced, which is the one thing
+    a creator needs in order to tell whether regenerating helped at all. The
+    run before this one is now kept beside it. Not every run before that:
+    unbounded, a scene worked on for an afternoon would hold a dozen clips
+    and ask the creator to watch all of them to find the good one.
+
+    Files always go with their rows. Storage keys carry the take index and
+    take indices no longer restart, so nothing is about to overwrite them -
+    a row deleted on its own would leave the clip behind for good.
+    """
+    result = await db.execute(
+        select(Asset).where(
+            Asset.scene_id == scene.id,
+            Asset.asset_type == AssetType.scene_video,
+        )
+    )
+    assets = list(result.scalars().all())
+    doomed = _runs_to_discard(
+        [(asset.take_index, asset.generation_job_id) for asset in assets], keep
+    )
+
+    for asset in assets:
+        if asset.generation_job_id not in doomed:
+            continue
+        # Best effort. A file that cannot be removed is an orphan taking up
+        # space, which is not worth failing a paid run over.
+        try:
+            await asyncio.to_thread(storage.delete, asset.storage_key)
+        except Exception:
+            pass
         await db.delete(asset)
     await db.flush()
 
@@ -671,17 +731,17 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 # Every take is saved, because every take was billed. The
                 # creator picks between them afterwards; throwing the rest
                 # away here would charge four times for one clip.
-                # Whatever this scene had before is gone. The storage keys
-                # are deterministic per scene and take, so a re-run overwrites
-                # the files but used to leave the old rows behind pointing at
-                # them - which listed the same clip twice in the media library
-                # and let the take picker offer takes from a run whose files
-                # no longer exist. Found by the review; 7 keys in the live
-                # database had two rows each.
-                await _discard_previous_takes(db, storage, project, scene, len(takes))
+                #
+                # The run this one replaces is kept too, so the creator can
+                # watch the new clip against the old one and tell whether
+                # regenerating actually helped. Everything before that pair
+                # goes, files and rows together.
+                await _discard_runs_beyond(db, storage, scene, keep=1)
+                first_take = await _next_take_index(db, scene)
 
                 take_paths: list[Path] = []
-                for take_index, video_bytes in enumerate(takes):
+                for offset, video_bytes in enumerate(takes):
+                    take_index = first_take + offset
                     local_path = (
                         Path(tempfile.gettempdir()) / f"oneinfo-scene-{uuid.uuid4()}.mp4"
                     )
@@ -706,17 +766,20 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                             storage_key=storage_key,
                             mime_type="video/mp4",
                             duration_seconds=take_duration,
+                            generation_job_id=job.id,
                             take_index=take_index,
                         )
                     )
 
                 # A fresh run invalidates whichever take was picked last
-                # time, whatever its index: take 3 of this run is not the clip
-                # the creator reviewed and chose, it just happens to sit in
-                # the same slot. Resetting only when the new run had fewer
-                # takes silently shipped a clip nobody had watched.
-                scene.selected_take = 0
-                render_inputs.append(take_paths[scene.selected_take])
+                # time, whatever its index: the creator chose a clip, not a
+                # slot, and none of this run's clips are that clip. Points at
+                # the first of the new ones, which is also what the finished
+                # video uses unless they pick otherwise.
+                scene.selected_take = first_take
+                # Indexed locally: take_paths holds only this run's files,
+                # while selected_take counts from the scene's whole history.
+                render_inputs.append(take_paths[0])
                 job.scenes_completed = index
                 await db.commit()
 

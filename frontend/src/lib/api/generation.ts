@@ -75,7 +75,25 @@ export async function getSceneClip(
   return api.getBlob(`/projects/${projectId}/scenes/${sceneId}/file${suffix}`);
 }
 
-export type SceneTakes = { takes: number; selected_take: number };
+/** One clip on hand for a scene. */
+export type SceneTake = {
+  take_index: number;
+  /**
+   * The run that produced it. Clips sharing this came out of one
+   * generation; a different id is the attempt that replaced them, which is
+   * the comparison the creator is making. Null on clips generated before
+   * runs were recorded.
+   */
+  generation_job_id: string | null;
+  created_at: string;
+};
+
+/**
+ * A list, not a count. Take indices count up across runs and old runs are
+ * dropped, so a scene on its second run holds takes 1 and 2 - inferring
+ * 0..n-1 would offer a deleted clip and hide a real one.
+ */
+export type SceneTakes = { takes: SceneTake[]; selected_take: number };
 
 export function getSceneTakes(projectId: string, sceneId: string): Promise<SceneTakes> {
   return api.get<SceneTakes>(`/projects/${projectId}/scenes/${sceneId}/takes`);

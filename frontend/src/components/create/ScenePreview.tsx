@@ -1,13 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Download } from "lucide-react";
-import { generateScene, getGenerationStatus, getSceneClip } from "@/lib/api/generation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Download } from "lucide-react";
+import {
+  generateScene,
+  getGenerationStatus,
+  getSceneClip,
+  getSceneTakes,
+  selectSceneTake,
+} from "@/lib/api/generation";
+import type { SceneTake } from "@/lib/api/generation";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { GenerateDialog } from "@/components/create/GenerateDialog";
 import { sceneCost } from "@/lib/workflow/scene-cost";
+import { cn } from "@/lib/utils/cn";
 import type { OutputSettings } from "@/types/output-settings";
 import type { Storyboard, StoryboardScene } from "@/types/storyboard";
 
@@ -22,6 +30,10 @@ import type { Storyboard, StoryboardScene } from "@/types/storyboard";
  * The clip is loaded on arrival, not only after generating. It was paid for
  * and it is still on the server; making it disappear on reload implied it
  * had to be generated again, which is the one mistake here that costs money.
+ *
+ * Regenerating shows the new clip beside the one it replaced. Pressing
+ * Regenerate is a question — is this better? — and it used to delete the
+ * only thing that could answer it.
  */
 export function ScenePreview({
   projectId,
@@ -44,41 +56,126 @@ export function ScenePreview({
   const [askingSettings, setAskingSettings] = useState(false);
   const [running, setRunning] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
-  const [clipUrl, setClipUrl] = useState<string | null>(null);
-  const objectUrl = useRef<string | null>(null);
+  const [takes, setTakes] = useState<SceneTake[]>([]);
+  const [selected, setSelected] = useState(scene.selected_take);
+  const [clips, setClips] = useState<Record<number, string>>({});
 
-  const showClip = useCallback(async () => {
-    const blob = await getSceneClip(projectId, sceneId);
-    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-    objectUrl.current = URL.createObjectURL(blob);
-    setClipUrl(objectUrl.current);
+  // Held outside state so cleanup can revoke them without depending on the
+  // render that created them.
+  const objectUrls = useRef(new Map<number, string>());
+
+  const loadTakes = useCallback(async () => {
+    // A scene never generated answers with an empty list, or 404s on a
+    // storyboard the server no longer knows. Both mean nothing to show.
+    try {
+      const result = await getSceneTakes(projectId, sceneId);
+      setTakes(result.takes);
+      setSelected(result.selected_take);
+    } catch {
+      setTakes([]);
+    }
   }, [projectId, sceneId]);
 
-  // Whatever was generated before. A 404 means this scene has never been
-  // generated, which is the ordinary case and not worth a message.
+  useEffect(() => {
+    // Reads before it writes: loadTakes awaits the server before setting
+    // anything, so this is a subscription to an external system rather than
+    // the cascading render the rule is written to catch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadTakes();
+  }, [loadTakes]);
+
+  // One blob per take. Fetched rather than linked because the clip route is
+  // auth-gated: a plain <video src> cannot attach the header.
   useEffect(() => {
     let cancelled = false;
+
     void (async () => {
-      try {
-        const blob = await getSceneClip(projectId, sceneId);
-        if (cancelled) return;
-        objectUrl.current = URL.createObjectURL(blob);
-        setClipUrl(objectUrl.current);
-      } catch {
-        // Never generated. Nothing to show, nothing to say.
+      // A take the server no longer lists was dropped along with the run it
+      // came from. Its object URL is holding a video nothing can reach.
+      const live = new Set(takes.map((take) => take.take_index));
+      const stale: number[] = [];
+      for (const [index, url] of objectUrls.current) {
+        if (live.has(index)) continue;
+        URL.revokeObjectURL(url);
+        objectUrls.current.delete(index);
+        stale.push(index);
+      }
+      if (stale.length > 0) {
+        setClips((current) => {
+          const rest = { ...current };
+          for (const index of stale) delete rest[index];
+          return rest;
+        });
+      }
+
+      for (const take of takes) {
+        if (objectUrls.current.has(take.take_index)) continue;
+        try {
+          const blob = await getSceneClip(projectId, sceneId, take.take_index);
+          if (cancelled) return;
+          const url = URL.createObjectURL(blob);
+          objectUrls.current.set(take.take_index, url);
+          setClips((current) => ({ ...current, [take.take_index]: url }));
+        } catch {
+          // A take whose file has gone. Nothing to show, nothing to say.
+        }
       }
     })();
+
     return () => {
       cancelled = true;
     };
-  }, [projectId, sceneId]);
+  }, [projectId, sceneId, takes]);
 
-  useEffect(
-    () => () => {
-      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-    },
-    []
-  );
+  useEffect(() => {
+    const held = objectUrls.current;
+    return () => {
+      held.forEach((url) => URL.revokeObjectURL(url));
+      held.clear();
+    };
+  }, []);
+
+  /**
+   * The takes grouped into the runs that produced them, newest run first.
+   *
+   * Grouped on the run rather than laid out flat because the comparison the
+   * creator is making is between attempts, not between clips: four takes of
+   * one run are one attempt, and the run before them is the thing they are
+   * being judged against.
+   */
+  const runs = useMemo(() => {
+    const grouped = new Map<string, SceneTake[]>();
+    // Newest first. Take indices count up across runs and never restart, so
+    // the highest index belongs to the most recent attempt.
+    for (const take of [...takes].sort((a, b) => b.take_index - a.take_index)) {
+      // Clips from before runs were recorded share a null id and group
+      // together, which is the most that can honestly be said about them.
+      const key = take.generation_job_id ?? "before-runs-were-recorded";
+      const existing = grouped.get(key);
+      if (existing) existing.push(take);
+      else grouped.set(key, [take]);
+    }
+    return [...grouped.values()].map((group) =>
+      [...group].sort((a, b) => a.take_index - b.take_index)
+    );
+  }, [takes]);
+
+  async function chooseTake(takeIndex: number) {
+    const previous = selected;
+    // Switched immediately: picking a take is free and reversible, and the
+    // finished video is only rebuilt when the creator asks for it.
+    setSelected(takeIndex);
+    try {
+      await selectSceneTake(projectId, sceneId, takeIndex);
+    } catch (err) {
+      setSelected(previous);
+      toast({
+        variant: "destructive",
+        title: "Couldn't switch take",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    }
+  }
 
   async function handleGenerate() {
     setRunning(true);
@@ -94,7 +191,7 @@ export function ScenePreview({
         if (!job) continue;
         setStage(job.current_stage);
         if (job.status === "completed") {
-          await showClip();
+          await loadTakes();
           setStage(null);
           return;
         }
@@ -114,6 +211,8 @@ export function ScenePreview({
       setRunning(false);
     }
   }
+
+  const hasClip = takes.length > 0;
 
   return (
     <div className="space-y-2 pt-1">
@@ -137,12 +236,13 @@ export function ScenePreview({
           disabled={running}
           onClick={() => setAskingSettings(true)}
         >
-          {clipUrl ? "Regenerate this scene" : "Generate this scene"}
+          {hasClip ? "Regenerate this scene" : "Generate this scene"}
         </Button>
         {!running && (
           <span className="text-xs text-muted-foreground">
             Just this scene —{" "}
             {sceneCost(scene.duration_seconds, scene.features_creator, output)}
+            {runs.length > 1 && " — keeps the one you have"}
           </span>
         )}
       </div>
@@ -162,24 +262,100 @@ export function ScenePreview({
         </div>
       )}
 
-      {clipUrl && (
-        <div className="space-y-2">
-          {/*
-            Capped by height, not width. These are 9:16 now, and a vertical
-            clip at max-w-sm stands 683px tall - it pushed the rest of the
-            scene off the screen entirely.
-          */}
-          <video
-            src={clipUrl}
-            controls
-            className="max-h-72 w-auto max-w-full rounded-lg border border-border bg-black"
-          />
-          <Button variant="ghost" size="sm" asChild>
-            <a href={clipUrl} download={`scene-${scene.order}.mp4`}>
-              <Download className="size-4" />
-              Download this clip
-            </a>
-          </Button>
+      {/*
+        Side by side, newest on the left. Two columns rather than a switcher:
+        the question is which of these is better, and a control that shows
+        one at a time makes the creator answer it from memory.
+      */}
+      {hasClip && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {runs.flatMap((run, runIndex) =>
+            run.map((take, position) => {
+              const url = clips[take.take_index];
+              const isSelected = take.take_index === selected;
+              const label =
+                runs.length === 1
+                  ? run.length > 1
+                    ? `Take ${position + 1}`
+                    : null
+                  : runIndex === 0
+                    ? run.length > 1
+                      ? `New · take ${position + 1}`
+                      : "New"
+                    : run.length > 1
+                      ? `Previous · take ${position + 1}`
+                      : "Previous";
+
+              return (
+                <div
+                  key={take.take_index}
+                  className={cn(
+                    "space-y-2 rounded-lg border p-2 transition-colors",
+                    isSelected ? "border-primary bg-primary/5" : "border-border"
+                  )}
+                >
+                  {label && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={cn(
+                          "text-[11px] font-semibold uppercase tracking-wider",
+                          runIndex === 0 ? "text-foreground" : "text-muted-foreground"
+                        )}
+                      >
+                        {label}
+                      </span>
+                      {isSelected && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+                          <Check className="size-3" aria-hidden="true" />
+                          In the video
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {url ? (
+                    <video
+                      src={url}
+                      controls
+                      className="max-h-64 w-full rounded-md border border-border bg-black object-contain"
+                    />
+                  ) : (
+                    <div className="flex h-32 items-center justify-center rounded-md border border-border bg-muted/40">
+                      <Spinner className="size-4" />
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/*
+                      Only where there is a choice. One clip is not a
+                      decision, and a button saying so implies there is.
+                    */}
+                    {takes.length > 1 && !isSelected && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void chooseTake(take.take_index)}
+                      >
+                        Use this one
+                      </Button>
+                    )}
+                    {url && (
+                      <a
+                        href={url}
+                        download={`scene-${scene.order}${
+                          takes.length > 1 ? `-take-${take.take_index + 1}` : ""
+                        }.mp4`}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <Download className="size-3.5" aria-hidden="true" />
+                        Download
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       )}
     </div>

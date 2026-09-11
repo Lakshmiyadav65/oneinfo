@@ -13,6 +13,7 @@ from app.providers.storage import get_storage_provider
 from app.schemas.export import ExportRequest
 from app.schemas.generation import (
     GenerationJobOut,
+    SceneTakeOut,
     SceneTakesOut,
     StitchReadinessOut,
     VideoOutputOut,
@@ -202,10 +203,13 @@ async def get_scene_takes(
     creator: Creator = Depends(get_current_creator),
     db: AsyncSession = Depends(get_db),
 ) -> SceneTakesOut:
-    """How many takes exist for this scene, and which one is in use."""
-    count = await generation_service.count_scene_takes(db, creator.id, project_id, scene_id)
+    """Which clips exist for this scene, and which one is in use."""
+    takes = await generation_service.list_scene_takes(db, creator.id, project_id, scene_id)
     scene = await generation_service.get_scene(db, creator.id, project_id, scene_id)
-    return SceneTakesOut(takes=count, selected_take=scene.selected_take)
+    return SceneTakesOut(
+        takes=[SceneTakeOut.model_validate(asset) for asset in takes],
+        selected_take=scene.selected_take,
+    )
 
 
 @router.post("/scenes/{scene_id}/takes/{take}", response_model=SceneTakesOut)
@@ -225,5 +229,8 @@ async def select_scene_take(
     scene = await generation_service.select_scene_take(
         db, creator.id, project_id, scene_id, take
     )
-    count = await generation_service.count_scene_takes(db, creator.id, project_id, scene_id)
-    return SceneTakesOut(takes=count, selected_take=scene.selected_take)
+    takes = await generation_service.list_scene_takes(db, creator.id, project_id, scene_id)
+    return SceneTakesOut(
+        takes=[SceneTakeOut.model_validate(asset) for asset in takes],
+        selected_take=scene.selected_take,
+    )

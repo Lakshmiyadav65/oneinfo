@@ -36,10 +36,31 @@ class VideoOutputOut(BaseModel):
     url: str
 
 
-class SceneTakesOut(BaseModel):
-    """What there is to choose between for one scene, and what is chosen."""
+class SceneTakeOut(BaseModel):
+    """One clip on hand for a scene."""
 
-    takes: int
+    model_config = ConfigDict(from_attributes=True)
+
+    take_index: int
+    # The run that produced it. Two clips sharing this came out of the same
+    # generation and cost one price between them; clips with different ids
+    # are the new attempt and the one it replaced, which is the comparison
+    # the creator is actually making. Null on clips generated before runs
+    # were recorded.
+    generation_job_id: uuid.UUID | None = None
+    created_at: datetime
+
+
+class SceneTakesOut(BaseModel):
+    """
+    What there is to choose between for one scene, and what is chosen.
+
+    A list rather than a count. Take indices count up across runs and older
+    runs are eventually dropped, so they are not 0..n-1 and never were safe
+    to infer - a scene on its second run holds takes 1 and 2, not 0 and 1.
+    """
+
+    takes: list[SceneTakeOut]
     selected_take: int
 
 

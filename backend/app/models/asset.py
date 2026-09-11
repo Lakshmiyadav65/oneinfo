@@ -31,8 +31,18 @@ class Asset(Base):
     storage_key: Mapped[str] = mapped_column(String, nullable=False)
     mime_type: Mapped[str] = mapped_column(String, nullable=False)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Which take this is, when a run generated several of the same scene.
-    # Zero-based. Every take is kept: they were all paid for, and the point
-    # of asking for four is to choose between them afterwards.
+    # The run that produced this clip, or null for one generated before the
+    # column existed. What it buys is the grouping: a scene keeps the clips
+    # from its last two runs so the creator can see the new one beside the
+    # one it replaced, and "which run" is the only way to tell those apart.
+    generation_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("generation_jobs.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    # Which take this is. Zero-based and counting up across runs, never
+    # restarting: two runs of the same scene both starting at zero would
+    # collide on the storage key and leave `selected_take` naming two
+    # different clips. Every take is kept - they were all paid for, and the
+    # point of asking for four is to choose between them afterwards.
     take_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
