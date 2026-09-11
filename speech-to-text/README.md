@@ -15,7 +15,9 @@ web framework standing beside it.
 | `transcribe_reel.py` | `backend/app/providers/transcription/` and `backend/app/providers/reels.py` |
 | the CLI around it | `python -m app.cli.transcribe` |
 | `streamlit_app.py` | **My Knowledge → Add Knowledge → Your reels** |
-| `requirements.txt` | `backend/pyproject.toml` |
+| `--engine whisper` | `TRANSCRIPTION_PROVIDER=whisper` (`backend/app/providers/transcription/whisper_provider.py`) |
+| `--cookies` | `INSTAGRAM_COOKIES_PATH` in `backend/.env` |
+| `requirements.txt` | `backend/pyproject.toml` (Whisper is the `[whisper]` extra) |
 
 The originals are not lost: the `speech-to-text` branch still holds them
 exactly as they were pushed.
@@ -32,6 +34,14 @@ is what a second copy does.
 
 Whatever you tune here should predict what the app will do, and that only
 holds if it is the same code.
+
+One thing did change in the move rather than being copied. The local Whisper
+engine is now offered for English only: asked for Telugu on a real reel it
+returns fluent-looking Telugu script that is not words, and it refuses rather
+than returning it. In a terminal that nonsense is obvious and harmless — the
+prototype was right to just print it. Filed into the knowledge layer it would
+be chunked, embedded, and surfaced months later as something you supposedly
+said.
 
 ## Using the CLI
 

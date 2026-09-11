@@ -35,6 +35,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The local transcription engine, kept out of the default install because it
+# pulls a few hundred megabytes of inference runtime that most deployments
+# never touch — TRANSCRIPTION_PROVIDER=sarvam needs none of it. Install with
+# `pip install -e .[whisper]` to transcribe without an API key.
+whisper = [
+  "faster-whisper>=1.0.3",
+]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",

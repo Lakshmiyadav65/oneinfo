@@ -103,8 +103,15 @@ class Settings(BaseSettings):
     # reads one back. A creator who has no chat history to paste usually
     # does have a year of their own reels, and what they said in them is the
     # closest thing to a record of how they talk.
-    transcription_provider: Literal["dev", "sarvam"] = "dev"
+    # "sarvam" is the API and the only one that can write Tenglish.
+    # "whisper" runs on this machine with no key and no network - slower,
+    # free, and the audio never leaves the server, but it cannot
+    # transliterate, so Tenglish comes back in Telugu script.
+    transcription_provider: Literal["dev", "sarvam", "whisper"] = "dev"
     sarvam_stt_model: str = "saaras:v3"
+    # Bigger is more accurate and slower; "small" is the prototype's default
+    # and a reasonable floor for Telugu.
+    whisper_model: Literal["tiny", "base", "small", "medium", "large-v3"] = "small"
     # Sarvam's real-time endpoint is documented at roughly 30 seconds per
     # request, so audio is cut at pauses before it is sent. The cut is taken
     # at the first pause after min, not at a target length: waiting for a
@@ -122,6 +129,13 @@ class Settings(BaseSettings):
     # Downloads a reel. Absent from PATH, the reel routes fail with that as
     # the message rather than a FileNotFoundError from deep in a subprocess.
     ytdlp_path: str = "yt-dlp"
+    # A Netscape-format cookies.txt for the creator's own Instagram session.
+    # Private and age-gated reels are served only to a signed-in account, so
+    # without this they cannot be downloaded at all and the only way in is
+    # uploading the file by hand. Read from disk on the server, never
+    # accepted over the API: a cookie jar is a live login, and taking one
+    # through a form would mean storing other people's sessions.
+    instagram_cookies_path: str | None = None
     # A minute of 1080p reel lands near 15 MB, but nothing stops a creator
     # pointing this at a twenty-minute video. Checked while streaming to
     # disk, never after.

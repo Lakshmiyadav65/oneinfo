@@ -96,7 +96,11 @@ async def download_reel(
     process = await asyncio.to_thread(_invoke)
 
     if process.returncode != 0:
-        raise ReelDownloadError(_readable_error(process.stderr.decode(errors="replace")))
+        raise ReelDownloadError(
+            _readable_error(
+                process.stderr.decode(errors="replace"), had_cookies=cookies_path is not None
+            )
+        )
 
     printed = [line for line in process.stdout.decode(errors="replace").splitlines() if line.strip()]
     if not printed:
@@ -163,7 +167,7 @@ def _or_none(value: object) -> str | None:
     return None if text in ("", "NA", "None") else text
 
 
-def _readable_error(stderr: str) -> str:
+def _readable_error(stderr: str, *, had_cookies: bool = False) -> str:
     """
     yt-dlp's diagnosis, translated into something a creator can act on.
 
@@ -173,10 +177,19 @@ def _readable_error(stderr: str) -> str:
     """
     lowered = stderr.lower()
     if "login" in lowered or "private" in lowered or "rate-limit" in lowered:
+        if had_cookies:
+            # Pointing them at the cookies file they already configured would
+            # be useless advice, so say the thing that is actually wrong.
+            return (
+                "That reel still needs a login even with the configured "
+                "cookies — the session has probably expired. Export a fresh "
+                "cookies.txt, or upload the video file instead."
+            )
         return (
             "That reel needs a login to view — Instagram serves private and "
-            "some age-gated posts only to signed-in accounts. Download the "
-            "video and upload the file instead."
+            "some age-gated posts only to signed-in accounts. Set "
+            "INSTAGRAM_COOKIES_PATH to your own exported cookies.txt, or "
+            "upload the video file instead."
         )
     if "file is larger than max-filesize" in lowered or "max-filesize" in lowered:
         return "That video is larger than the server will accept. Try a shorter one."

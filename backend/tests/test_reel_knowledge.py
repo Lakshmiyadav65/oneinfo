@@ -11,6 +11,7 @@ for twice.
 
 import sys
 from itertools import pairwise
+from pathlib import Path
 from typing import get_args
 
 import pytest
@@ -21,6 +22,7 @@ from app.providers.reels import (
     _resolve_command,
     is_video_url,
 )
+from app.providers.transcription import get_transcription_provider
 from app.providers.transcription.audio import plan_chunk_cuts
 from app.providers.transcription.base import (
     TRANSCRIPT_LANGUAGES,
@@ -195,15 +197,31 @@ def test_only_links_are_treated_as_links(value, expected):
     assert is_video_url(value) is expected
 
 
+_LOGIN_WALL = (
+    "ERROR: [Instagram] abc: Requested content is not available, "
+    "rate-limit reached or login required"
+)
+
+
 def test_a_login_wall_is_explained_rather_than_dumped():
     """The downloader's own wording here is a stack of internal detail. What
     a creator needs is the one thing they can do about it."""
-    message = _readable_error(
-        "ERROR: [Instagram] abc: Requested content is not available, "
-        "rate-limit reached or login required"
-    )
+    message = _readable_error(_LOGIN_WALL)
 
-    assert "download the video and upload the file instead" in message.lower()
+    assert "instagram_cookies_path" in message.lower()
+    assert "upload the video file instead" in message.lower()
+
+
+def test_a_login_wall_with_cookies_already_set_says_something_useful_instead():
+    """
+    Telling someone to configure the cookies file they have already
+    configured is the kind of advice that makes a person stop reading error
+    messages. If the session was sent and still refused, it has expired.
+    """
+    message = _readable_error(_LOGIN_WALL, had_cookies=True)
+
+    assert "expired" in message.lower()
+    assert "instagram_cookies_path" not in message.lower()
 
 
 def test_a_reel_with_no_reported_duration_still_parses():
@@ -288,6 +306,40 @@ async def test_a_bad_link_is_reported_beside_the_good_ones(
     assert good["error"] is None
     assert bad["document"] is None
     assert "not a link" in bad["error"].lower()
+
+
+@pytest.mark.parametrize("key", ["telugu", "tenglish"])
+async def test_the_local_engine_refuses_what_it_cannot_actually_do(key):
+    """
+    Measured, not assumed: asked for Telugu on a real reel this model returns
+    fluent-looking Telugu script that is not words, while translating the
+    same audio gives a usable English rendering.
+
+    It refuses rather than warning because of where the output goes. The
+    prototype printed to a terminal for a person to eyeball; here it would be
+    chunked, embedded, and surfaced months later as something the creator
+    supposedly said.
+    """
+    from app.providers.transcription.whisper_provider import (
+        WhisperTranscriptionProvider,
+        WhisperUnavailableError,
+    )
+
+    provider = WhisperTranscriptionProvider("small")
+
+    with pytest.raises(WhisperUnavailableError) as refusal:
+        await provider.transcribe(Path("unused.wav"), language=transcript_language_for(key))
+
+    assert "sarvam" in str(refusal.value).lower()
+
+
+def test_choosing_the_local_engine_gets_the_local_engine():
+    from app.core.config import Settings
+    from app.providers.transcription.whisper_provider import WhisperTranscriptionProvider
+
+    provider = get_transcription_provider(Settings(transcription_provider="whisper"))
+
+    assert isinstance(provider, WhisperTranscriptionProvider)
 
 
 async def test_the_same_reel_is_never_transcribed_twice(

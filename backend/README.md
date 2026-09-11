@@ -175,6 +175,25 @@ without spending anything. `TRANSCRIPTION_PROVIDER=sarvam` + `SARVAM_API_KEY`
 (the same key the voice uses) is the one that handles Telugu and English in
 the same sentence.
 
+`TRANSCRIPTION_PROVIDER=whisper` is the third, carried over from the
+prototype: it runs on this machine, needs no key and no network, and the
+audio never leaves the server. It is offered for **English only**, which is
+measured rather than assumed — on a real Telugu reel it returns fluent-looking
+Telugu script that is not words, while translating the same audio gives a
+usable English rendering. It refuses `telugu` and `tenglish` outright rather
+than filing nonsense that would be chunked, embedded and surfaced months
+later as something the creator supposedly said. Needs
+`pip install -e .[whisper]`, which pulls a few hundred megabytes of inference
+runtime that the Sarvam path does not.
+
+A private or age-gated reel is served only to a signed-in account. Point
+`INSTAGRAM_COOKIES_PATH` at your own exported `cookies.txt` and those
+download too; the error message says so when one is refused, and says the
+session has expired instead when cookies were sent and still turned away.
+Cookies are read from disk on the server and never accepted over the API — a
+cookie jar is a live login, and taking one through a form would mean storing
+other people's sessions.
+
 A transcript is written in one of the project languages — English, Tenglish,
 Telugu — and deliberately not in a vocabulary of its own. The transcript is
 what the script agents later write from, so it is the same question Create

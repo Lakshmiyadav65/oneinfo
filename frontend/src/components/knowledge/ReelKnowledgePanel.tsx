@@ -108,8 +108,8 @@ export function ReelKnowledgePanel({ onSaved }: { onSaved: () => void }) {
         />
         <p className="text-xs text-muted-foreground">
           Up to ten at a time. Each one is downloaded, transcribed and filed as its own
-          document — so your own words become what OneInfo writes from. Public reels only;
-          a private one needs the video file instead.
+          document — so your own words become what OneInfo writes from. If a reel is
+          private, upload the video below instead.
         </p>
         <Button onClick={handleTranscribe} disabled={busy || urls.length === 0}>
           {busy ? <Spinner className="size-4" /> : <Link2 className="size-4" />}

@@ -149,8 +149,20 @@ async def _transcribe(
         uploader: str | None = None
 
         if url:
+            # Present only when the creator has put their own cookies.txt on
+            # the server. Without it a private reel simply cannot be fetched,
+            # and the error says so rather than pretending the link was bad.
+            cookies = (
+                Path(settings.instagram_cookies_path)
+                if settings.instagram_cookies_path
+                else None
+            )
             reel = await download_reel(
-                settings.ytdlp_path, url, workdir, max_bytes=settings.max_video_bytes
+                settings.ytdlp_path,
+                url,
+                workdir,
+                max_bytes=settings.max_video_bytes,
+                cookies_path=cookies,
             )
             video_path, title, uploader = reel.path, reel.title, reel.uploader
         elif local_path:

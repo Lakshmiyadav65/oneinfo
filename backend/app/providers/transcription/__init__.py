@@ -11,6 +11,7 @@ from app.providers.transcription.base import (
 )
 from app.providers.transcription.dev_provider import DevTranscriptionProvider
 from app.providers.transcription.sarvam_provider import SarvamTranscriptionProvider
+from app.providers.transcription.whisper_provider import WhisperTranscriptionProvider
 
 __all__ = [
     "DEFAULT_TRANSCRIPT_LANGUAGE",
@@ -39,4 +40,6 @@ def get_transcription_provider(settings: Settings) -> TranscriptionProvider:
             silence_db=settings.transcription_silence_db,
             silence_min_seconds=settings.transcription_silence_min_seconds,
         )
+    if settings.transcription_provider == "whisper":
+        return WhisperTranscriptionProvider(settings.whisper_model)
     return DevTranscriptionProvider(settings.ffprobe_path)
