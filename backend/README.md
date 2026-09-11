@@ -219,9 +219,12 @@ as the message and uploading the file still works. A private or age-gated
 reel cannot be downloaded at all — the error says so and points at the
 upload.
 
-The standalone CLI and Streamlit version of this pipeline lives in
-[`../speech-to-text/`](../speech-to-text/), which is where it was worked out;
-this is the same approach wired into the app.
+There is one implementation of this pipeline and everything uses it. The
+terminal entry point is `python -m app.cli.transcribe` (see
+`app/cli/transcribe.py`), which imports the same providers the routes above
+do — so tuning a language or a chunk length against a real video predicts
+what the server will do, rather than approximating it. The prototype it grew
+out of is described in [`../speech-to-text/`](../speech-to-text/).
 
 ## Content agents (Phase 03)
 
