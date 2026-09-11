@@ -39,10 +39,30 @@ class KnowledgeTextIn(BaseModel):
     content: str
 
 
+class CorrectionIn(BaseModel):
+    """One word the transcriber got wrong, and what it should say."""
+
+    heard: str = Field(min_length=1, max_length=120)
+    corrected: str = Field(min_length=1, max_length=120)
+
+
+class CorrectionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    heard: str
+    corrected: str
+    created_at: datetime
+
+
 class KnowledgeContentIn(BaseModel):
     """A corrected document body, replacing what is stored."""
 
     content: str = Field(min_length=1)
+    # The substitutions made while editing, to remember for next time. Sent
+    # with the edit rather than saved separately so that fixing a word and
+    # never seeing it again is one action, not two.
+    corrections: list[CorrectionIn] = Field(default_factory=list, max_length=20)
 
 
 class KnowledgeRetranscribeIn(BaseModel):

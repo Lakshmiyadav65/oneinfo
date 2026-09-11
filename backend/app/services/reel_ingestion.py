@@ -14,6 +14,7 @@ words would be paying for the wrong thing twice.
 
 import tempfile
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 from app.core.config import Settings, get_settings
@@ -26,6 +27,7 @@ from app.providers.transcription import (
     transcript_language_for,
 )
 from app.providers.transcription.audio import extract_audio
+from app.services import correction_service
 from app.services.knowledge_processing import process_knowledge_document
 
 # How much of the transcript is kept as the document's standing summary.
@@ -101,9 +103,14 @@ async def transcribe_into_knowledge(
             return
 
         try:
+            # Fetched before transcribing so the substitutions are in hand
+            # when the words come back. A name the model has never heard is
+            # got wrong identically every time, so a creator who has fixed
+            # it once should never see it again.
+            pairs = await correction_service.corrections_for(db, document.creator_id)
             content, summary, title = await _transcribe(
                 settings, url=url, local_path=local_path, language_key=language_key,
-                fallback_title=document.title,
+                fallback_title=document.title, corrections=pairs,
             )
         except Exception as exc:
             await db.rollback()
@@ -139,6 +146,7 @@ async def _transcribe(
     local_path: str | None,
     language_key: str,
     fallback_title: str,
+    corrections: list[tuple[str, str]] | None = None,
 ) -> tuple[str, str, str]:
     """The document text, its summary and its title, from whichever source was given."""
     language = transcript_language_for(language_key)
@@ -174,6 +182,14 @@ async def _transcribe(
 
         audio_path = await extract_audio(settings.ffmpeg_path, video_path, workdir)
         transcript = await provider.transcribe(audio_path, language=language)
+
+    if corrections:
+        # Applied to the words before anything is built from them, so the
+        # document, the summary and the chunks all agree. Correcting only
+        # the document would leave the summary quoting the mistake as fact.
+        transcript = replace(
+            transcript, text=correction_service.apply_corrections(transcript.text, corrections)
+        )
 
     if not transcript.text.strip():
         raise ValueError(

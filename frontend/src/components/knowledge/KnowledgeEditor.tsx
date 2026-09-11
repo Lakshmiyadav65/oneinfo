@@ -36,10 +36,13 @@ export function replaceEverywhere(text: string, term: string, replacement: strin
 export function KnowledgeEditor({
   value,
   onChange,
+  onReplaced,
   disabled,
 }: {
   value: string;
   onChange: (next: string) => void;
+  /** Told about each substitution, so it can be remembered for next time. */
+  onReplaced: (heard: string, corrected: string) => void;
   disabled?: boolean;
 }) {
   const [wrong, setWrong] = useState("");
@@ -52,6 +55,10 @@ export function KnowledgeEditor({
 
   function applyReplacement() {
     onChange(replaceEverywhere(value, wrong, right));
+    // The same mistake will be in the next reel, and the one after that —
+    // this is the moment the creator has told us what the right answer is,
+    // so it is the moment worth recording it.
+    onReplaced(wrong, right);
     setWrong("");
     setRight("");
   }
@@ -106,7 +113,8 @@ export function KnowledgeEditor({
           <p className="mt-2 text-xs text-muted-foreground">
             {hits === 0
               ? `"${wrong}" is not in this transcript.`
-              : `Found ${hits} ${hits === 1 ? "time" : "times"}. Capitalisation is ignored.`}
+              : `Found ${hits} ${hits === 1 ? "time" : "times"}. Capitalisation is ignored, and ` +
+                `this fix will be applied to future transcripts too.`}
           </p>
         )}
       </div>

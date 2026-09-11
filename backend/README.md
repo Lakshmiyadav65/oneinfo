@@ -228,6 +228,16 @@ alone. `POST /knowledge/{id}/retranscribe` reads a reel again in another
 language, and is refused for an uploaded video — only the transcript was
 kept, so there is nothing to read.
 
+Corrections outlive the transcript they were made in. A speech model gets a
+name wrong identically every time — the same reel said "Mac Mini" twice and
+it came back "MagMain" twice — so fixing a word while editing records it in
+`transcript_corrections`, and every later transcription is rewritten through
+that glossary before it is filed. Substitutions are applied longest-first,
+because given both `mac -> Mac` and `magmain -> Mac Mini` the short rule
+would otherwise turn "magmain" into "Macmain" and the specific rule could
+never match. `GET/POST /knowledge/corrections` manage it by hand, and the
+list is shown under My Knowledge rather than working invisibly.
+
 Two of those mappings are not the obvious one:
 
 - **Tenglish is `translit`, not `transcribe`.** The app defines Tenglish as

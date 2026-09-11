@@ -10,6 +10,7 @@ from app.models.project import Project
 from app.models.script import Script
 from app.models.storyboard import Storyboard, StoryboardScene
 from app.models.tanglish import TanglishScript
+from app.models.transcript_correction import TranscriptCorrection
 from app.models.video_output import VideoOutput
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "Storyboard",
     "StoryboardScene",
     "TanglishScript",
+    "TranscriptCorrection",
     "VideoOutput",
 ]

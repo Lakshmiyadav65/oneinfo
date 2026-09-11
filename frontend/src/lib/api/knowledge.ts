@@ -1,5 +1,7 @@
 import { api, ApiNotConfiguredError } from "@/lib/api/client";
 import type {
+  Correction,
+  CorrectionDraft,
   KnowledgeDetail,
   KnowledgeItem,
   KnowledgeStructureResult,
@@ -78,8 +80,30 @@ export function getKnowledge(id: string): Promise<KnowledgeDetail> {
  * Saves a correction. Comes back "processing" — the text is stored at once,
  * and the re-chunking that makes it findable happens after the response.
  */
-export function updateKnowledgeContent(id: string, content: string): Promise<KnowledgeItem> {
-  return api.patch<KnowledgeItem>(`/knowledge/${id}`, { content });
+export function updateKnowledgeContent(
+  id: string,
+  content: string,
+  /** Substitutions made while editing, remembered for future transcripts. */
+  corrections: CorrectionDraft[] = []
+): Promise<KnowledgeItem> {
+  return api.patch<KnowledgeItem>(`/knowledge/${id}`, { content, corrections });
+}
+
+export async function listCorrections(): Promise<Correction[]> {
+  try {
+    return await api.get<Correction[]>("/knowledge/corrections");
+  } catch (err) {
+    if (err instanceof ApiNotConfiguredError) return [];
+    throw err;
+  }
+}
+
+export function addCorrection(heard: string, corrected: string): Promise<Correction> {
+  return api.post<Correction>("/knowledge/corrections", { heard, corrected });
+}
+
+export function deleteCorrection(id: string): Promise<void> {
+  return api.delete<void>(`/knowledge/corrections/${id}`);
 }
 
 /** Reads the same reel again in another language. Links only. */

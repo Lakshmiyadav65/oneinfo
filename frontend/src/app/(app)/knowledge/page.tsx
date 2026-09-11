@@ -6,6 +6,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { deleteKnowledge, listKnowledge } from "@/lib/api/knowledge";
 import { AddKnowledgeDialog } from "@/components/knowledge/AddKnowledgeDialog";
 import { KnowledgeViewerDialog } from "@/components/knowledge/KnowledgeViewerDialog";
+import { CorrectionsLibrary } from "@/components/knowledge/CorrectionsLibrary";
 import { EnvironmentSetupLibrary } from "@/components/knowledge/EnvironmentSetupLibrary";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -180,6 +181,13 @@ export default function KnowledgePage() {
         do the same job.
       */}
       <EnvironmentSetupLibrary />
+
+      {/*
+        Last, because it is the most niche of the three and the only one that
+        acts on the others - a correction rewrites transcripts as they arrive
+        rather than being something a creator reaches for directly.
+      */}
+      <CorrectionsLibrary />
     </div>
   );
 }

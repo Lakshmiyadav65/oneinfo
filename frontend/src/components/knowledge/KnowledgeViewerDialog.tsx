@@ -22,7 +22,7 @@ import {
   retranscribeKnowledge,
   updateKnowledgeContent,
 } from "@/lib/api/knowledge";
-import type { KnowledgeDetail, KnowledgeItem } from "@/types/knowledge";
+import type { CorrectionDraft, KnowledgeDetail, KnowledgeItem } from "@/types/knowledge";
 import { PROJECT_LANGUAGES, type ProjectLanguage } from "@/types/project";
 
 /**
@@ -113,6 +113,9 @@ export function KnowledgeViewerDialog({
   // rather than to whatever this transcript happens to be in — the reason
   // to open this fold is usually that the current one is wrong.
   const [target, setTarget] = useState<ProjectLanguage>("tenglish");
+  // Every substitution made in this editing session, saved alongside the
+  // text so the same mishearing is fixed before it reaches the next reel.
+  const [learned, setLearned] = useState<CorrectionDraft[]>([]);
   // What was loaded, stamped with the document it belongs to. Keeping the id
   // alongside the result is what makes showing the wrong text impossible
   // rather than merely unlikely: open a second document while the first is
@@ -174,13 +177,14 @@ export function KnowledgeViewerDialog({
   function stopEditing() {
     setDraft(null);
     setDraftFor(null);
+    setLearned([]);
   }
 
   async function save() {
     if (!id || draft === null) return;
     setBusy(true);
     try {
-      await updateKnowledgeContent(id, draft);
+      await updateKnowledgeContent(id, draft, learned);
       // Dropped rather than kept: the document is now being re-chunked, and
       // what comes back from the server is the thing to trust.
       setLoaded(null);
@@ -188,7 +192,10 @@ export function KnowledgeViewerDialog({
       onChanged();
       toast({
         title: "Correction saved",
-        description: "It is being re-read now, and the AI will use the corrected version.",
+        description: learned.length
+          ? `It is being re-read now, and ${learned.length === 1 ? "that fix" : "those fixes"} ` +
+            "will be applied to future transcripts automatically."
+          : "It is being re-read now, and the AI will use the corrected version.",
       });
     } catch (err) {
       toast({
@@ -291,7 +298,20 @@ export function KnowledgeViewerDialog({
               )}
 
               {editing ? (
-                <KnowledgeEditor value={draft} onChange={setDraft} disabled={busy} />
+                <KnowledgeEditor
+                  value={draft}
+                  onChange={setDraft}
+                  disabled={busy}
+                  onReplaced={(heard, corrected) =>
+                    setLearned((current) => [
+                      // Last one wins for the same word: a creator who
+                      // corrects, looks at it, and corrects again meant the
+                      // second answer.
+                      ...current.filter((c) => c.heard.toLowerCase() !== heard.toLowerCase()),
+                      { heard, corrected },
+                    ])
+                  }
+                />
               ) : body ? (
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-2">

@@ -21,6 +21,8 @@ from app.providers.llm import get_llm_provider
 from app.providers.reels import is_video_url
 from app.providers.storage import get_storage_provider
 from app.schemas.knowledge import (
+    CorrectionIn,
+    CorrectionOut,
     KnowledgeBulkIn,
     KnowledgeContentIn,
     KnowledgeDetailOut,
@@ -35,7 +37,7 @@ from app.schemas.knowledge import (
     KnowledgeTextIn,
     ReelQueuedOut,
 )
-from app.services import knowledge_service, project_service
+from app.services import correction_service, knowledge_service, project_service
 from app.services.knowledge_processing import process_knowledge_document
 from app.services.reel_ingestion import transcribe_into_knowledge
 
@@ -290,6 +292,40 @@ async def _spool_video_to_disk(file: UploadFile, limit_bytes: int) -> Path:
     return path
 
 
+@router.get("/corrections", response_model=list[CorrectionOut])
+async def list_corrections(
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    The words this creator's transcriber reliably gets wrong.
+
+    Declared above /{document_id} on purpose: routes match in order, and
+    "corrections" would otherwise be parsed as a document id.
+    """
+    return await correction_service.list_corrections(db, creator.id)
+
+
+@router.post("/corrections", response_model=CorrectionOut, status_code=201)
+async def add_correction(
+    payload: CorrectionIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+):
+    return await correction_service.add_correction(
+        db, creator.id, payload.heard, payload.corrected
+    )
+
+
+@router.delete("/corrections/{correction_id}", status_code=204)
+async def delete_correction(
+    correction_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await correction_service.delete_correction(db, creator.id, correction_id)
+
+
 @router.get("/{document_id}", response_model=KnowledgeDetailOut)
 async def get_knowledge(
     document_id: uuid.UUID,
@@ -341,6 +377,15 @@ async def edit_knowledge(
     document = await knowledge_service.save_edited_content(
         db, creator.id, document_id, payload.content
     )
+
+    # Remembered quietly. These ride along with the edit, and a creator who
+    # typed something odd into the fix box should still get their correction
+    # saved — so anything unusable is dropped rather than failing the write.
+    for correction in payload.corrections:
+        await correction_service.remember(
+            db, creator.id, correction.heard, correction.corrected
+        )
+
     background_tasks.add_task(process_knowledge_document, document.id, payload.content)
     return document
 

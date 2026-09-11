@@ -39,6 +39,17 @@ export type KnowledgeDetail = KnowledgeItem & {
   summary: string | null;
 };
 
+/** A word the transcriber reliably gets wrong, and what it should say. */
+export type Correction = {
+  id: string;
+  heard: string;
+  corrected: string;
+  created_at: string;
+};
+
+/** The same pair, before it has been saved. */
+export type CorrectionDraft = { heard: string; corrected: string };
+
 export type KnowledgePart = {
   label: string;
   text: string;
