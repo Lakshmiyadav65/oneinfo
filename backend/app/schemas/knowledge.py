@@ -21,6 +21,19 @@ class KnowledgeDocumentOut(BaseModel):
     created_at: datetime
 
 
+class KnowledgeDetailOut(KnowledgeDocumentOut):
+    """One document, opened. Everything the knowledge layer holds for it."""
+
+    # Rebuilt from the stored chunks — see knowledge_service.rejoin_chunks.
+    content: str
+    # What retrieval actually searches. Shown because "one document" and
+    # "eleven chunks" are different things, and a creator wondering why a
+    # long transcript keeps surfacing is owed the number.
+    chunk_count: int
+    # The standing takeaways, for anything that came from a link.
+    summary: str | None = None
+
+
 class KnowledgeTextIn(BaseModel):
     title: str
     content: str

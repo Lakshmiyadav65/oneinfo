@@ -1,5 +1,6 @@
 import { api, ApiNotConfiguredError } from "@/lib/api/client";
 import type {
+  KnowledgeDetail,
   KnowledgeItem,
   KnowledgeStructureResult,
   KnowledgeSection,
@@ -66,6 +67,11 @@ export function uploadKnowledgeVideo(
   form.append("file", file);
   form.append("language", language);
   return api.postForm<KnowledgeItem>("/knowledge/video", form);
+}
+
+/** What one document says. Read back out of the chunks retrieval searches. */
+export function getKnowledge(id: string): Promise<KnowledgeDetail> {
+  return api.get<KnowledgeDetail>(`/knowledge/${id}`);
 }
 
 export function deleteKnowledge(id: string): Promise<void> {

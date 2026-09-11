@@ -5,6 +5,7 @@ import { BookOpen, Plus, Trash2 } from "lucide-react";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { deleteKnowledge, listKnowledge } from "@/lib/api/knowledge";
 import { AddKnowledgeDialog } from "@/components/knowledge/AddKnowledgeDialog";
+import { KnowledgeViewerDialog } from "@/components/knowledge/KnowledgeViewerDialog";
 import { EnvironmentSetupLibrary } from "@/components/knowledge/EnvironmentSetupLibrary";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -37,6 +38,10 @@ export default function KnowledgePage() {
   const { toast } = useToast();
   const knowledge = useAsyncData(listKnowledge);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // The row being read, or null. Holding the item rather than just its id so
+  // the dialog can show the title and status straight away, while the
+  // content it has to fetch is still on its way.
+  const [viewing, setViewing] = useState<KnowledgeItem | null>(null);
 
   const items = knowledge.status === "success" ? knowledge.data : [];
   const hasProcessing = items.some((item) => item.status === "processing");
@@ -83,6 +88,11 @@ export default function KnowledgePage() {
         onSaved={knowledge.retry}
       />
 
+      <KnowledgeViewerDialog
+        item={viewing}
+        onOpenChange={(open) => !open && setViewing(null)}
+      />
+
       {knowledge.status === "loading" && (
         <div className="space-y-2">
           <Skeleton className="h-14 w-full" />
@@ -106,8 +116,21 @@ export default function KnowledgePage() {
       {knowledge.status === "success" && knowledge.data.length > 0 && (
         <div className="space-y-2">
           {knowledge.data.map((item) => (
-            <Card key={item.id}>
-              <CardContent className="flex items-center justify-between gap-3 p-4">
+            <Card key={item.id} className="relative transition-colors hover:border-ring">
+              {/*
+                An overlay rather than wrapping the row in a button: the row
+                already contains a link and a delete control, and nesting
+                those inside a button is invalid markup that keyboard and
+                screen-reader users pay for. This sits behind them, so a
+                click anywhere else opens the document.
+              */}
+              <button
+                type="button"
+                onClick={() => setViewing(item)}
+                aria-label={`Open ${item.title}`}
+                className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <CardContent className="pointer-events-none flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
                   <p className="text-xs text-muted-foreground">
@@ -123,7 +146,7 @@ export default function KnowledgePage() {
                       href={item.source_url}
                       target="_blank"
                       rel="noreferrer noopener"
-                      className="mt-0.5 block truncate text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      className="pointer-events-auto relative z-10 mt-0.5 block truncate text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
                     >
                       {item.source_url}
                     </a>
@@ -132,7 +155,7 @@ export default function KnowledgePage() {
                     <p className="mt-1 text-xs text-destructive">{item.error_message}</p>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="pointer-events-auto relative z-10 flex shrink-0 items-center gap-2">
                   <Badge variant={STATUS_VARIANT[item.status]}>{item.status}</Badge>
                   <Button
                     variant="ghost"

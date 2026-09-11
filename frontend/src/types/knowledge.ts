@@ -30,6 +30,15 @@ export type ReelQueued = {
   error: string | null;
 };
 
+/** One document, opened — everything the knowledge layer holds for it. */
+export type KnowledgeDetail = KnowledgeItem & {
+  /** Rebuilt from the stored chunks; this is what the agents actually read. */
+  content: string;
+  /** How many pieces retrieval sees this as. */
+  chunk_count: number;
+  summary: string | null;
+};
+
 export type KnowledgePart = {
   label: string;
   text: string;

@@ -4,7 +4,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.models.knowledge import KnowledgeDocument, KnowledgeSourceType, KnowledgeStatus
+from app.models.knowledge import (
+    KnowledgeChunk,
+    KnowledgeDocument,
+    KnowledgeSourceType,
+    KnowledgeStatus,
+)
 
 
 async def list_documents(db: AsyncSession, creator_id: str) -> list[KnowledgeDocument]:
@@ -51,6 +56,44 @@ async def find_by_source_url(
         )
     )
     return result.scalars().first()
+
+
+def rejoin_chunks(chunks: list[str], overlap_words: int) -> str:
+    """
+    The document's text, back out of the chunks it was stored as.
+
+    Chunking is the only place the text survives ingestion — the original is
+    never kept, since a knowledge document exists to be retrieved rather than
+    re-read. Consecutive chunks deliberately overlap so a sentence split
+    across a boundary is still findable, so rejoining means dropping each
+    chunk's leading overlap or every boundary reads twice.
+
+    Word-exact, not byte-exact: chunking normalises whitespace, so the line
+    breaks a transcript was written with are already gone by this point and
+    no amount of rejoining brings them back.
+    """
+    if not chunks:
+        return ""
+    parts = [chunks[0]]
+    for chunk in chunks[1:]:
+        # A final chunk shorter than the overlap is entirely contained in the
+        # one before it, and correctly contributes nothing.
+        parts.append(" ".join(chunk.split()[overlap_words:]))
+    return " ".join(part for part in parts if part).strip()
+
+
+async def get_document_text(
+    db: AsyncSession, creator_id: str, document_id: uuid.UUID, overlap_words: int
+) -> tuple[KnowledgeDocument, str, int]:
+    """The document, what it says, and how many chunks retrieval sees it as."""
+    document = await get_owned_document(db, creator_id, document_id)
+    result = await db.execute(
+        select(KnowledgeChunk.content)
+        .where(KnowledgeChunk.document_id == document.id)
+        .order_by(KnowledgeChunk.chunk_index)
+    )
+    chunks = list(result.scalars().all())
+    return document, rejoin_chunks(chunks, overlap_words), len(chunks)
 
 
 async def create_pending_document(

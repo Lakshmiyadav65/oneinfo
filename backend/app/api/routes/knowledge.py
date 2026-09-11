@@ -22,6 +22,7 @@ from app.providers.reels import is_video_url
 from app.providers.storage import get_storage_provider
 from app.schemas.knowledge import (
     KnowledgeBulkIn,
+    KnowledgeDetailOut,
     KnowledgeDocumentOut,
     KnowledgePartOut,
     KnowledgeReelsIn,
@@ -285,6 +286,31 @@ async def _spool_video_to_disk(file: UploadFile, limit_bytes: int) -> Path:
         path.unlink(missing_ok=True)
         raise
     return path
+
+
+@router.get("/{document_id}", response_model=KnowledgeDetailOut)
+async def get_knowledge(
+    document_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> KnowledgeDetailOut:
+    """
+    What this document actually says.
+
+    Read back out of the chunks rather than from a stored copy: the chunks
+    are what retrieval searches, so this shows what the agents will find
+    rather than what was submitted, and the two are worth not confusing.
+    """
+    document, content, chunk_count = await knowledge_service.get_document_text(
+        db, creator.id, document_id, settings.chunk_overlap_words
+    )
+    return KnowledgeDetailOut(
+        **KnowledgeDocumentOut.model_validate(document).model_dump(),
+        content=content,
+        chunk_count=chunk_count,
+        summary=document.summary,
+    )
 
 
 @router.delete("/{document_id}", status_code=204)

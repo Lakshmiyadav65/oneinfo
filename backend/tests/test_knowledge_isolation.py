@@ -52,3 +52,39 @@ async def test_rag_retrieval_is_scoped_to_creator(db_session, seeded_dev_creator
     assert all(chunk.creator_id == "creator-b" for chunk in results_for_b)
     assert any("guitar" in chunk.content.lower() for chunk in results_for_b)
     assert not any("pottery" in chunk.content.lower() for chunk in results_for_b)
+
+
+def test_a_document_reads_back_out_of_its_chunks_without_repeating_itself():
+    """
+    Opening a knowledge item shows what it says, and the text only survives
+    ingestion as overlapping chunks. Rejoining without dropping the overlap
+    makes every boundary read twice — a creator checking a transcript would
+    see each sentence stutter and reasonably conclude the transcriber did it.
+    """
+    from app.providers.chunking import chunk_text
+    from app.services.knowledge_service import rejoin_chunks
+
+    original = " ".join(f"word{n}" for n in range(1000))
+    chunks = chunk_text(original, 400, 60)
+
+    assert len(chunks) > 1, "needs to actually chunk for this to mean anything"
+    assert rejoin_chunks(chunks, 60) == original
+
+
+def test_rejoining_a_single_chunk_changes_nothing():
+    from app.services.knowledge_service import rejoin_chunks
+
+    assert rejoin_chunks(["just the one"], 60) == "just the one"
+    assert rejoin_chunks([], 60) == ""
+
+
+def test_a_trailing_chunk_shorter_than_the_overlap_adds_nothing():
+    """It is entirely contained in the chunk before it, so contributing any
+    of it would duplicate text that is already there."""
+    from app.providers.chunking import chunk_text
+    from app.services.knowledge_service import rejoin_chunks
+
+    original = " ".join(f"w{n}" for n in range(341 + 340))
+    chunks = chunk_text(original, 400, 60)
+
+    assert rejoin_chunks(chunks, 60) == original
