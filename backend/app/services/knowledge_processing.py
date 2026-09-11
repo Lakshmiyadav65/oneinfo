@@ -40,6 +40,10 @@ async def process_knowledge_document(document_id: uuid.UUID, raw_text: str | Non
             if not chunks:
                 raise ValueError("No extractable text content.")
 
+            # Kept as written, before chunking flattens the whitespace out of
+            # it. This is what gets shown when someone opens the document.
+            document.content = text
+
             embedder = get_embedding_provider(settings)
             embeddings = await asyncio.to_thread(embedder.embed, chunks)
 

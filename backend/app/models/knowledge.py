@@ -48,6 +48,12 @@ class KnowledgeDocument(Base):
     # recognise a link that has already been read, so pasting the same URL
     # into a second project costs neither a fetch nor a model call.
     source_url: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # What the document says, kept whole. The chunks below are what
+    # retrieval searches and they normalise whitespace away, so they are the
+    # wrong thing to show a creator who opened a transcript to read it.
+    # Null on anything filed before this column existed; the reader falls
+    # back to rejoining the chunks.
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The takeaways pulled from that page, kept apart from the chunked text.
     # Retrieval is a similarity search and can miss; a project whose whole
     # idea is one link cannot afford to be told about that link only when

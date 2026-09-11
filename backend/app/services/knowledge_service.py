@@ -93,7 +93,12 @@ async def get_document_text(
         .order_by(KnowledgeChunk.chunk_index)
     )
     chunks = list(result.scalars().all())
-    return document, rejoin_chunks(chunks, overlap_words), len(chunks)
+
+    # The text as written wins where there is one: it still has the line
+    # breaks that make a transcript readable. Rejoining is the fallback for
+    # documents filed before it was kept, which are otherwise unreadable.
+    text = document.content or rejoin_chunks(chunks, overlap_words)
+    return document, text, len(chunks)
 
 
 async def create_pending_document(
