@@ -83,6 +83,16 @@ class Settings(BaseSettings):
     # Only calls that actually carry a face pay that; see VeoVideoProvider.
     veo_reference_model: str = "veo-3.1-fast-generate-001"
 
+    # Who says the scene's line. Veo speaks its own, and for Telugu it
+    # speaks it badly - audibly synthetic, and mispronounced because the
+    # dialogue reaches it romanised. Sarvam says the line properly and the
+    # pipeline puts it over Veo's picture.
+    speech_provider: Literal["dev", "sarvam"] = "dev"
+    sarvam_api_key: str | None = None
+    sarvam_tts_model: str = "bulbul:v3"
+    # Lower case, and the API is strict about it.
+    sarvam_speaker: str = "shubh"
+
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
     video_width: int = 1280

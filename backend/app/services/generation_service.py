@@ -182,26 +182,32 @@ async def _existing_clip(
     """
     The clip on hand for one scene, or None.
 
+    A voiced clip wins over the raw one for the same take. Voicing replaces
+    Veo's speech with the line said properly, and a finished video built
+    from the raw clips would throw that away silently - the creator would
+    hear the real voice in the preview and the synthetic one in the export.
+
     Falls back to take 0 when the picked take is missing, for the same reason
     get_scene_asset does: clips generated before takes existed all carry
     index 0, and a scene pointing at a take that run never produced still has
     a perfectly good clip sitting there.
     """
     wanted = scene.selected_take if take is None else take
-    for candidate in (wanted, 0):
-        result = await db.execute(
-            select(Asset)
-            .where(
-                Asset.scene_id == scene.id,
-                Asset.asset_type == AssetType.scene_video,
-                Asset.take_index == candidate,
+    for asset_type in (AssetType.scene_voiced_video, AssetType.scene_video):
+        for candidate in (wanted, 0):
+            result = await db.execute(
+                select(Asset)
+                .where(
+                    Asset.scene_id == scene.id,
+                    Asset.asset_type == asset_type,
+                    Asset.take_index == candidate,
+                )
+                .order_by(Asset.created_at.desc())
+                .limit(1)
             )
-            .order_by(Asset.created_at.desc())
-            .limit(1)
-        )
-        asset = result.scalar_one_or_none()
-        if asset is not None:
-            return asset
+            asset = result.scalar_one_or_none()
+            if asset is not None:
+                return asset
     return None
 
 
@@ -320,6 +326,8 @@ async def get_scene_asset(
     project_id: uuid.UUID,
     scene_id: uuid.UUID,
     take: int | None = None,
+    *,
+    prefer_voiced: bool = False,
 ) -> Asset:
     """
     The newest generated clip for one scene. Newest rather than only, since
@@ -328,6 +336,11 @@ async def get_scene_asset(
     `take` picks one of several takes from the same run. Omitted, it returns
     whichever take the scene is currently set to use, so a caller that knows
     nothing about takes still gets the clip the final video will contain.
+
+    `prefer_voiced` returns the clip with the real voice over it where one
+    exists. Off by default, and deliberately so: the voice pass itself asks
+    for the source clip, and voicing an already-voiced one would lay a second
+    reading over the first.
     """
     await project_service.get_owned_project(db, creator_id, project_id)
 
@@ -339,27 +352,37 @@ async def get_scene_asset(
     # query. Adding a second take_index clause to an existing one ANDs them
     # into a contradiction, which made the take-0 fallback below unreachable
     # and turned a missing take into a 404.
-    def for_take(wanted: int):
+    def for_take(wanted: int, asset_type: AssetType):
         return (
             select(Asset)
             .where(
                 Asset.project_id == project_id,
                 Asset.scene_id == scene_id,
                 Asset.creator_id == creator_id,
-                Asset.asset_type == AssetType.scene_video,
+                Asset.asset_type == asset_type,
                 Asset.take_index == wanted,
             )
             .order_by(Asset.created_at.desc())
             .limit(1)
         )
 
-    asset = (await db.execute(for_take(take))).scalar_one_or_none()
+    asset = None
+    if prefer_voiced:
+        asset = (
+            await db.execute(for_take(take, AssetType.scene_voiced_video))
+        ).scalar_one_or_none()
+    if asset is None:
+        asset = (
+            await db.execute(for_take(take, AssetType.scene_video))
+        ).scalar_one_or_none()
 
     # Clips generated before takes existed carry take_index 0 by migration
     # default, so this only fires when a caller asks for a take that run
     # never produced.
     if asset is None and take != 0:
-        asset = (await db.execute(for_take(0))).scalar_one_or_none()
+        asset = (
+            await db.execute(for_take(0, AssetType.scene_video))
+        ).scalar_one_or_none()
 
     if asset is None:
         raise NotFoundError("This scene hasn't been generated yet.")

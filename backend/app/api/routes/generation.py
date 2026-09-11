@@ -15,10 +15,11 @@ from app.schemas.generation import (
     GenerationJobOut,
     SceneTakeOut,
     SceneTakesOut,
+    SceneVoiceOut,
     StitchReadinessOut,
     VideoOutputOut,
 )
-from app.services import generation_service
+from app.services import generation_service, voice_service
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["generation"])
 
@@ -187,9 +188,13 @@ async def download_scene(
 
     `take` picks one of several takes from the same run. Omitted, it serves
     the take the final video will actually use.
+
+    Serves the voiced clip where one exists, because that is the clip the
+    final video is built from. Playing the raw one here would have the
+    creator approving Veo's synthetic reading and exporting a different one.
     """
     asset = await generation_service.get_scene_asset(
-        db, creator.id, project_id, scene_id, take
+        db, creator.id, project_id, scene_id, take, prefer_voiced=True
     )
     storage = get_storage_provider(settings)
     content = await asyncio.to_thread(storage.read, asset.storage_key)
@@ -233,4 +238,31 @@ async def select_scene_take(
     return SceneTakesOut(
         takes=[SceneTakeOut.model_validate(asset) for asset in takes],
         selected_take=scene.selected_take,
+    )
+
+
+@router.post("/scenes/{scene_id}/voice", response_model=SceneVoiceOut)
+async def voice_scene(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> SceneVoiceOut:
+    """
+    Says this scene's line over the clip it already has, replacing the voice
+    Veo generated.
+
+    Calls the video provider zero times, so trying a different voice or a
+    reworded line never means paying to generate the picture again.
+    """
+    result = await voice_service.voice_scene(
+        db, settings, creator.id, project_id, scene_id
+    )
+    return SceneVoiceOut(
+        clip_seconds=result.clip_seconds,
+        spoken_seconds=result.spoken_seconds,
+        pace=result.pace,
+        overruns=result.overruns,
+        overrun_seconds=result.overrun_seconds,
     )

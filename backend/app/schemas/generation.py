@@ -72,3 +72,20 @@ class StitchReadinessOut(BaseModel):
     # Scene numbers with no clip yet. Empty means combining is available.
     missing_scenes: list[int]
 
+
+
+class SceneVoiceOut(BaseModel):
+    """
+    What the voice pass produced, and whether the line actually fits.
+
+    The timings are reported rather than swallowed because Veo only makes
+    clips of 4, 6 or 8 seconds. A line written longer than its scene cannot
+    be made to fit by any amount of speeding up, and the creator shortening
+    it is the only fix that does not make something worse.
+    """
+
+    clip_seconds: float
+    spoken_seconds: float
+    pace: float
+    overruns: bool
+    overrun_seconds: float

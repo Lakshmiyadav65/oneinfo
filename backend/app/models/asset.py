@@ -12,6 +12,11 @@ from app.db.base import Base
 class AssetType(str, enum.Enum):
     scene_video = "scene_video"
     scene_audio = "scene_audio"
+    # The same clip with a real voice over it, in place of the one Veo
+    # generated. Held as its own asset rather than overwriting the clip:
+    # Veo's picture was paid for and re-voicing has to stay free, so the
+    # original must survive every change of voice.
+    scene_voiced_video = "scene_voiced_video"
 
 
 class Asset(Base):
