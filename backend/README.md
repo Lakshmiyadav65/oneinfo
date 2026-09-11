@@ -242,8 +242,14 @@ There is one implementation of this pipeline and everything uses it. The
 terminal entry point is `python -m app.cli.transcribe` (see
 `app/cli/transcribe.py`), which imports the same providers the routes above
 do — so tuning a language or a chunk length against a real video predicts
-what the server will do, rather than approximating it. The prototype it grew
-out of is described in [`../speech-to-text/`](../speech-to-text/).
+what the server will do, rather than approximating it.
+
+It began as a standalone tool — `requests`, Streamlit, its own env-var
+config — and that version is still on the `speech-to-text` branch if it is
+ever wanted. It was collapsed into this one rather than kept alongside it
+because the two had already drifted: the same yt-dlp lookup, duration
+parsing and language vocabulary were fixed here and not there, which is what
+a second copy of a pipeline does the first time either side is touched.
 
 ## Content agents (Phase 03)
 
