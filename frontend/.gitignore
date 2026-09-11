@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Face-tracking runtime, copied from node_modules and fetched on install by
+# scripts/vendor-mediapipe.mjs. ~35MB of wasm plus a model file — vendored so
+# the avatar capture never needs a CDN, but not committed.
+/public/mediapipe/

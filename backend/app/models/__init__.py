@@ -1,6 +1,7 @@
 from app.models.asset import Asset
 from app.models.creator import Creator
 from app.models.creator_face import CreatorFaceImage
+from app.models.creator_recording import CreatorRecording
 from app.models.environment_setup import EnvironmentSetup
 from app.models.generation_job import GenerationJob
 from app.models.hook import Hook
@@ -15,6 +16,7 @@ __all__ = [
     "Asset",
     "Creator",
     "CreatorFaceImage",
+    "CreatorRecording",
     "EnvironmentSetup",
     "GenerationJob",
     "Hook",

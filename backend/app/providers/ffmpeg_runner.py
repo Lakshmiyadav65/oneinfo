@@ -1,6 +1,7 @@
 import asyncio
 import json
 import subprocess
+from dataclasses import dataclass
 
 from app.core.errors import AppError
 
@@ -79,3 +80,64 @@ async def probe_duration_seconds(ffprobe_path: str, file_path: str) -> float:
     )
     data = json.loads(output)
     return float(data["format"]["duration"])
+
+
+@dataclass(frozen=True)
+class VideoInfo:
+    duration_seconds: float
+    width: int | None
+    height: int | None
+    has_video: bool
+    has_audio: bool
+
+
+async def probe_video_info(ffprobe_path: str, file_path: str) -> VideoInfo:
+    """
+    What a file actually contains, rather than what its name or the browser's
+    Content-Type claims.
+
+    This is to an uploaded recording what Pillow is to an uploaded photo: the
+    only thing that decides whether the bytes are usable. A file that arrives
+    labelled video/webm and holds nothing of the sort has to fail here, with
+    something readable, and not four steps later inside ffmpeg.
+    """
+    output = await _run(
+        ffprobe_path,
+        [
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-show_streams",
+            "-of", "json",
+            file_path,
+        ],
+        error_message="ffprobe failed",
+    )
+    data = json.loads(output)
+    streams = data.get("streams") or []
+    video = next((s for s in streams if s.get("codec_type") == "video"), None)
+
+    # A WebM straight out of MediaRecorder routinely reports no container
+    # duration at all - the header is written before the length is known and
+    # never gets back-filled. Fall back to the video stream's own duration
+    # rather than calling a perfectly good recording unreadable.
+    raw_duration = data.get("format", {}).get("duration")
+    if raw_duration in (None, "N/A") and video is not None:
+        raw_duration = video.get("duration")
+    try:
+        duration = float(raw_duration)
+    except (TypeError, ValueError):
+        duration = 0.0
+
+    def _dimension(key: str) -> int | None:
+        if video is None:
+            return None
+        value = video.get(key)
+        return int(value) if isinstance(value, int | float | str) and str(value).isdigit() else None
+
+    return VideoInfo(
+        duration_seconds=duration,
+        width=_dimension("width"),
+        height=_dimension("height"),
+        has_video=video is not None,
+        has_audio=any(s.get("codec_type") == "audio" for s in streams),
+    )

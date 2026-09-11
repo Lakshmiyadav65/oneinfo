@@ -35,6 +35,20 @@ class CreatorFaceImage(Base):
     # Lowest first. Veo weights the images it is given, so the creator's
     # best straight-on shot should be position 0.
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # The capture this frame was grabbed from, and which way the head was
+    # turned when it was. Both null for an uploaded photo, which is what
+    # every row written before the capture flow existed is.
+    #
+    # SET NULL rather than CASCADE: a frame outlives the capture it came
+    # from. Deleting someone's recording should not delete the reference set
+    # that was cut from it.
+    recording_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("creator_recordings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    angle: Mapped[str | None] = mapped_column(String, nullable=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     file_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)

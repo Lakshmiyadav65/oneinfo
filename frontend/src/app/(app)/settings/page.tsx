@@ -1,14 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Label } from "@/components/ui/Label";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { AvatarCaptureCard } from "@/components/settings/AvatarCaptureCard";
 import { FaceSetupCard } from "@/components/settings/FaceSetupCard";
 
 export default function SettingsPage() {
   const { creator, signOut } = useAuth();
+  // A capture replaces the reference set, so the photo card below is showing
+  // stale images the moment one finishes. Remounting it is cheaper than
+  // threading shared state through two cards that otherwise don't know about
+  // each other.
+  const [faceVersion, setFaceVersion] = useState(0);
 
   return (
     <div className="max-w-lg space-y-6">
@@ -28,7 +35,8 @@ export default function SettingsPage() {
       </Card>
 
       <h2 className="pt-2 text-xl font-semibold text-foreground">Appearance</h2>
-      <FaceSetupCard />
+      <AvatarCaptureCard onChange={() => setFaceVersion((version) => version + 1)} />
+      <FaceSetupCard key={faceVersion} />
 
       <Button variant="destructive" onClick={() => void signOut()}>
         Sign out

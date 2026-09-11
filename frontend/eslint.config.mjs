@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored face-tracking runtime: emscripten glue copied out of
+    // node_modules by scripts/vendor-mediapipe.mjs. Not ours to lint, and it
+    // trips every rule from require() to a GL call named useProgram.
+    "public/mediapipe/**",
   ]),
 ]);
 

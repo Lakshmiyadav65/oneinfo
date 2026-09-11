@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     chunk_size_words: int = 400
     chunk_overlap_words: int = 60
     max_upload_bytes: int = 10 * 1024 * 1024
+    # The photo ceiling is the wrong one for an avatar capture. Ten seconds
+    # of 720p out of MediaRecorder lands near 3 MB, but a slow browser, a
+    # long take or a codec that refuses the bitrate hint can multiply that,
+    # and making someone film themselves twice is a poor way to enforce a
+    # limit. Checked while streaming to disk, never after.
+    max_recording_bytes: int = 60 * 1024 * 1024
 
     hook_candidate_count: int = 5
     idea_suggestion_count: int = 5

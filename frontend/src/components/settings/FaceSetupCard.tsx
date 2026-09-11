@@ -5,8 +5,6 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import {
   deleteFaceImage,
   getFaceSetup,
-  grantFaceConsent,
-  revokeFaceConsent,
   updateFaceDescriptions,
   uploadFaceImage,
 } from "@/lib/api/creator-face";
@@ -92,9 +90,10 @@ export function FaceSetupCard() {
       <CardContent className="space-y-6 p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Your face in videos</h3>
+            <h3 className="text-base font-semibold text-foreground">Reference photos</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Add photos and we can put you on camera instead of a stranger.
+              What the video model actually works from. A recording fills these in for
+              you — upload them by hand if you&apos;d rather, or if you have no camera.
             </p>
           </div>
           <Badge variant={data.ready_for_generation ? "success" : "default"}>
@@ -104,7 +103,7 @@ export function FaceSetupCard() {
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label>Reference photos</Label>
+            <Label>Photos on file</Label>
             <span className="text-xs text-muted-foreground">
               {data.images.length} of {data.max_images}
             </span>
@@ -117,8 +116,10 @@ export function FaceSetupCard() {
                 className="flex flex-col justify-between rounded-md border border-border bg-muted/30 p-3"
               >
                 <div className="text-xs text-muted-foreground">
-                  <p className="font-medium text-foreground">
-                    {image.position === 0 ? "Primary" : `Photo ${image.position + 1}`}
+                  <p className="font-medium capitalize text-foreground">
+                    {/* An angle means this came from a capture, and naming it
+                        is more use than "Photo 2". */}
+                    {image.angle ?? (image.position === 0 ? "Primary" : `Photo ${image.position + 1}`)}
                   </p>
                   <p className="mt-1">
                     {image.width}×{image.height}
@@ -171,33 +172,16 @@ export function FaceSetupCard() {
           </div>
         </div>
 
-        <div className="space-y-3 border-t border-border pt-5">
-          <Label htmlFor="face-consent" className="flex items-start gap-2.5">
-            <input
-              id="face-consent"
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 shrink-0"
-              checked={data.consent_granted}
-              disabled={busy}
-              onChange={(event) =>
-                void run(
-                  () => (event.target.checked ? grantFaceConsent() : revokeFaceConsent()),
-                  "Couldn't update consent"
-                )
-              }
-            />
-            <span className="text-sm font-normal text-foreground">
-              I agree to my likeness being used to generate videos of me, and confirm
-              these photos are of me.
-            </span>
-          </Label>
-          {data.consent_granted && data.consent_at && (
-            <p className="pl-6 text-xs text-muted-foreground">
-              Agreed {new Date(data.consent_at).toLocaleDateString()}. You can withdraw
-              this at any time — your photos stay until you delete them.
-            </p>
-          )}
-        </div>
+        {/* Consent is asked for once, on the capture card above, which
+            renders whether or not a camera is available. Asking for the same
+            agreement twice on one screen reads as two different agreements. */}
+        {data.consent_granted && data.consent_at && (
+          <p className="border-t border-border pt-4 text-xs text-muted-foreground">
+            You agreed to your likeness being used on{" "}
+            {new Date(data.consent_at).toLocaleDateString()}. You can withdraw that
+            above at any time — your photos stay until you delete them.
+          </p>
+        )}
 
         <div className="space-y-4 border-t border-border pt-5">
           <div className="space-y-1.5">
