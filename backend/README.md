@@ -161,6 +161,68 @@ only depend on the `StorageProvider` interface in
 `GET /projects/{id}/output`'s local-storage proxy route is bypassed
 entirely once this is on.
 
+## Reels as knowledge
+
+My Knowledge assumes a creator has something written down to give it. Many
+have nothing written and a year of reels instead, so `POST /knowledge/reels`
+(links) and `POST /knowledge/video` (a file) transcribe what they said on
+camera and file it as ordinary knowledge documents — chunked, embedded and
+retrieved exactly like a pasted chat.
+
+`TRANSCRIPTION_PROVIDER=dev` (default) produces a placeholder transcript
+marked `[DEV MODE]`, which exercises download → extract → chunk → embed
+without spending anything. `TRANSCRIPTION_PROVIDER=sarvam` + `SARVAM_API_KEY`
+(the same key the voice uses) is the one that handles Telugu and English in
+the same sentence.
+
+A transcript is written in one of the project languages — English, Tenglish,
+Telugu — and deliberately not in a vocabulary of its own. The transcript is
+what the script agents later write from, so it is the same question Create
+Video asks, asked once; `TRANSCRIPT_LANGUAGES` in
+`providers/transcription/base.py` maps each onto a Sarvam mode, and a test
+pins that set equal to the project languages so the two cannot drift. Unasked,
+a reel follows the creator's most recent project, the same guess a new project
+makes.
+
+Two of those mappings are not the obvious one:
+
+- **Tenglish is `translit`, not `transcribe`.** The app defines Tenglish as
+  spoken Telugu written in Latin script (`models/tanglish.py`, and every
+  agent prompt). Transliteration produces exactly that; transcription would
+  return Telugu script and make the same word mean two different things in
+  two places.
+- **English is `translate`, not `transcribe`.** Asked to transcribe Telugu
+  speech as `en-IN`, the model ignores the code and returns Telugu script
+  anyway — a creator picking English got a Telugu document. Translate
+  honours the choice whatever the reel was spoken in.
+
+Two more things are worth knowing before changing anything here:
+
+- **The cut is the whole game.** `providers/transcription/audio.py` cuts the
+  audio at the *first pause after* `TRANSCRIPTION_MIN_CHUNK_SECONDS`, not at
+  a target length. Language detection picks one language per request, so a
+  chunk that spans the pause between a Telugu sentence and an English one
+  comes back written entirely in whichever the model thought was dominant.
+  If whole sentences land in the wrong script, that is the knob — lower MIN,
+  and raise `TRANSCRIPTION_SILENCE_DB` toward `-25` if background music is
+  masking the pauses.
+- **The video is never stored.** Only the transcript is kept. An uploaded
+  file is spooled to disk, transcribed, and deleted; a downloaded reel lives
+  in a temp directory for the length of the request. `MAX_VIDEO_BYTES` bounds
+  what one request touches, not what is retained.
+
+`yt-dlp` is installed with the backend's dependencies and shells out as a
+CLI. Instagram changes its internals often, so it is the dependency most
+likely to need upgrading alone (`pip install -U yt-dlp`) when downloads
+start failing for no other reason. Without it on PATH, links fail with that
+as the message and uploading the file still works. A private or age-gated
+reel cannot be downloaded at all — the error says so and points at the
+upload.
+
+The standalone CLI and Streamlit version of this pipeline lives in
+[`../speech-to-text/`](../speech-to-text/), which is where it was worked out;
+this is the same approach wired into the app.
+
 ## Content agents (Phase 03)
 
 `LLM_PROVIDER=dev` (default) uses a deterministic templated provider — no

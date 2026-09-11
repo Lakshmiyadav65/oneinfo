@@ -26,6 +26,12 @@ dependencies = [
   # are ever sent to Veo as a subject reference.
   "pillow>=11.0",
   "sentry-sdk[fastapi]>=2.0",
+  # Downloads the reel behind a link a creator pastes into My Knowledge.
+  # Used as the CLI it installs, not as a library — Instagram reshuffles its
+  # internals often enough that this is the dependency most likely to need
+  # upgrading on its own (pip install -U yt-dlp) when downloads start
+  # failing for no other reason.
+  "yt-dlp>=2024.8.6",
 ]
 
 [project.optional-dependencies]

@@ -33,12 +33,33 @@ async def get_owned_document(
     return document
 
 
+async def find_by_source_url(
+    db: AsyncSession, creator_id: str, source_url: str
+) -> KnowledgeDocument | None:
+    """
+    An earlier document from the same link, if there is one.
+
+    Transcribing a reel costs a request per chunk of audio, so the same link
+    pasted into a second batch should cost nothing at all. A failed attempt
+    is not a match — that one is worth retrying.
+    """
+    result = await db.execute(
+        select(KnowledgeDocument).where(
+            KnowledgeDocument.creator_id == creator_id,
+            KnowledgeDocument.source_url == source_url,
+            KnowledgeDocument.status != KnowledgeStatus.failed,
+        )
+    )
+    return result.scalars().first()
+
+
 async def create_pending_document(
     db: AsyncSession,
     creator_id: str,
     title: str,
     source_type: KnowledgeSourceType,
     storage_key: str | None,
+    source_url: str | None = None,
 ) -> KnowledgeDocument:
     document = KnowledgeDocument(
         creator_id=creator_id,
@@ -46,6 +67,7 @@ async def create_pending_document(
         source_type=source_type,
         status=KnowledgeStatus.processing,
         storage_key=storage_key,
+        source_url=source_url,
     )
     db.add(document)
     await db.commit()

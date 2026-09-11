@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,6 +14,9 @@ class KnowledgeDocumentOut(BaseModel):
     title: str
     source_type: KnowledgeSourceType
     status: KnowledgeStatus
+    # Set for anything that came from a link — a page that was read, or a
+    # reel that was transcribed. Null for everything filed by hand.
+    source_url: str | None = None
     error_message: str | None = None
     created_at: datetime
 
@@ -49,3 +53,37 @@ class KnowledgeStructureOut(BaseModel):
 
 class KnowledgeBulkIn(BaseModel):
     documents: list[KnowledgeTextIn] = Field(min_length=1, max_length=15)
+
+
+class KnowledgeReelsIn(BaseModel):
+    # Ten at a time. Each one is a download, an ffmpeg pass and a request per
+    # chunk of audio, and a creator who pastes their whole posting history in
+    # one go should be told to do it in batches rather than quietly starting
+    # four hundred jobs.
+    urls: list[str] = Field(min_length=1, max_length=10)
+    # The same three languages the rest of the app offers, not a vocabulary
+    # of this feature's own — a transcript is what the script agents later
+    # write from, so it is the same choice, asked once. None means "whatever
+    # this creator's projects are in".
+    language: Literal["english", "tenglish", "telugu"] | None = None
+
+
+class ReelQueuedOut(BaseModel):
+    """
+    What happened to one link.
+
+    A link that could not be accepted is reported beside the ones that were,
+    never as a failure of the whole request — the same contract as reading
+    several pages at once.
+    """
+
+    url: str
+    document: KnowledgeDocumentOut | None = None
+    # True when this link was already transcribed, so nothing was queued and
+    # nothing was charged.
+    already_added: bool = False
+    error: str | None = None
+
+
+class KnowledgeReelsOut(BaseModel):
+    reels: list[ReelQueuedOut]

@@ -1,5 +1,11 @@
 import { api, ApiNotConfiguredError } from "@/lib/api/client";
-import type { KnowledgeItem, KnowledgeStructureResult, KnowledgeSection } from "@/types/knowledge";
+import type {
+  KnowledgeItem,
+  KnowledgeStructureResult,
+  KnowledgeSection,
+  ReelQueued,
+} from "@/types/knowledge";
+import type { ProjectLanguage } from "@/types/project";
 
 export async function listKnowledge(): Promise<KnowledgeItem[]> {
   try {
@@ -37,6 +43,29 @@ export function uploadKnowledgeFile(file: File): Promise<KnowledgeItem> {
   const form = new FormData();
   form.append("file", file);
   return api.postForm<KnowledgeItem>("/knowledge/upload", form);
+}
+
+/**
+ * Queues a batch of reel links for transcription. Resolves as soon as they
+ * are filed — every document comes back "processing", and the list polls
+ * until they are ready.
+ */
+export async function addKnowledgeReels(
+  urls: string[],
+  language: ProjectLanguage
+): Promise<{ reels: ReelQueued[] }> {
+  return api.post<{ reels: ReelQueued[] }>("/knowledge/reels", { urls, language });
+}
+
+/** The same, for a video file — the reel Instagram will not hand over. */
+export function uploadKnowledgeVideo(
+  file: File,
+  language: ProjectLanguage
+): Promise<KnowledgeItem> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("language", language);
+  return api.postForm<KnowledgeItem>("/knowledge/video", form);
 }
 
 export function deleteKnowledge(id: string): Promise<void> {

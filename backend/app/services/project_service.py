@@ -22,7 +22,7 @@ async def create_project(
     # properly — see hook_service.
     chosen_title = (title or "").strip()
     if language is None:
-        language = await _last_used_language(db, creator_id)
+        language = await last_used_language(db, creator_id)
 
     # The whole point of saving a setup: a creator who marked one as their
     # usual gets it on the next project without opening the panel. Nothing
@@ -44,7 +44,7 @@ async def create_project(
     return project
 
 
-async def _last_used_language(db: AsyncSession, creator_id: str) -> str:
+async def last_used_language(db: AsyncSession, creator_id: str) -> str:
     """
     The language of this creator's most recent project.
 
@@ -53,6 +53,9 @@ async def _last_used_language(db: AsyncSession, creator_id: str) -> str:
     quietly reset a Tenglish creator on every new project and made them
     change it again by hand. Their last project is the better guess; the
     fallback only applies to someone's very first one.
+
+    Also the default a reel is transcribed into, for the same reason: the
+    transcript is what the next script gets written from.
     """
     result = await db.execute(
         select(Project.language)

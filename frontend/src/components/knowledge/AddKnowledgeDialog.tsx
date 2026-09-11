@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { FileUp, Sparkles, Trash2 } from "lucide-react";
+import { ReelKnowledgePanel } from "@/components/knowledge/ReelKnowledgePanel";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -24,7 +25,16 @@ import {
 } from "@/lib/api/knowledge";
 import type { KnowledgeSection } from "@/types/knowledge";
 
-type Mode = "paste" | "upload";
+type Mode = "paste" | "upload" | "reels";
+
+// The three ways in, in the order a creator is likely to have something to
+// give. "reels" is last because it is the fallback for the ones who have
+// nothing written down — which is most of them, and the reason it exists.
+const MODES: { value: Mode; label: string }[] = [
+  { value: "paste", label: "Paste text" },
+  { value: "upload", label: "Upload a file" },
+  { value: "reels", label: "Your reels" },
+];
 
 type Props = {
   open: boolean;
@@ -143,31 +153,29 @@ export function AddKnowledgeDialog({ open, onOpenChange, onSaved }: Props) {
         <DialogHeader className="shrink-0">
           <DialogTitle>Add knowledge</DialogTitle>
           <DialogDescription>
-            Paste a chat, script or notes, or upload a file. OneInfo uses this to write in
-            your style.
+            Paste a chat, upload a file, or point OneInfo at reels you have already
+            posted. All three end up in the same place: what it writes from.
           </DialogDescription>
         </DialogHeader>
 
         {sections === null && (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="mb-4 flex shrink-0 gap-2">
-              <Button
-                variant={mode === "paste" ? "primary" : "secondary"}
-                size="sm"
-                onClick={() => setMode("paste")}
-              >
-                Paste text
-              </Button>
-              <Button
-                variant={mode === "upload" ? "primary" : "secondary"}
-                size="sm"
-                onClick={() => setMode("upload")}
-              >
-                Upload a file
-              </Button>
+            <div className="mb-4 flex shrink-0 flex-wrap gap-2">
+              {MODES.map((option) => (
+                <Button
+                  key={option.value}
+                  variant={mode === option.value ? "primary" : "secondary"}
+                  size="sm"
+                  onClick={() => setMode(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
             </div>
 
-            {mode === "paste" ? (
+            {mode === "reels" ? (
+              <ReelKnowledgePanel onSaved={onSaved} />
+            ) : mode === "paste" ? (
               // The textarea is the scroll surface here — it grows to fill the
               // dialog so a long paste scrolls inside the field, rather than
               // the field growing and pushing the buttons out of reach.

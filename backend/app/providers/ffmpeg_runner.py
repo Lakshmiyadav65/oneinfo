@@ -11,7 +11,9 @@ class FFmpegError(AppError):
     status_code = 500
 
 
-async def _run(binary: str, args: list[str], *, error_message: str) -> str:
+async def _run_capturing_stderr(
+    binary: str, args: list[str], *, error_message: str
+) -> tuple[str, str]:
     """
     Runs ffmpeg/ffprobe off the event loop.
 
@@ -38,11 +40,32 @@ async def _run(binary: str, args: list[str], *, error_message: str) -> str:
             line for line in stderr.decode(errors="replace").splitlines() if line.strip()
         ]
         raise FFmpegError(f"{error_message}: " + " | ".join(lines[-4:]))
-    return stdout.decode(errors="replace")
+    return stdout.decode(errors="replace"), stderr.decode(errors="replace")
+
+
+async def _run(binary: str, args: list[str], *, error_message: str) -> str:
+    """What the command wrote. The usual case - see _run_capturing_stderr."""
+    stdout, _ = await _run_capturing_stderr(binary, args, error_message=error_message)
+    return stdout
 
 
 async def run_ffmpeg(ffmpeg_path: str, args: list[str]) -> None:
     await _run(ffmpeg_path, ["-y", *args], error_message="ffmpeg failed")
+
+
+async def run_ffmpeg_for_stderr(ffmpeg_path: str, args: list[str]) -> str:
+    """
+    Runs ffmpeg for what it prints rather than what it writes.
+
+    Some filters report their findings and nothing else - silencedetect is
+    the one here, which analyses the audio and announces each pause on
+    stderr while the output goes to /dev/null. That is a successful run
+    whose entire result is in the log, so it needs its own way back out.
+    """
+    _, stderr = await _run_capturing_stderr(
+        ffmpeg_path, ["-y", *args], error_message="ffmpeg failed"
+    )
+    return stderr
 
 
 def escape_drawtext(text: str) -> str:

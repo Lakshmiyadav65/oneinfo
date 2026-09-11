@@ -16,6 +16,11 @@ class KnowledgeSourceType(str, enum.Enum):
     docx = "docx"
     txt = "txt"
     text = "text"
+    # What a creator said on camera, transcribed. `reel` came from a link,
+    # `video` from a file they uploaded — the same text either way, but the
+    # distinction is worth keeping: only one of them has a URL to go back to.
+    reel = "reel"
+    video = "video"
 
 
 class KnowledgeStatus(str, enum.Enum):

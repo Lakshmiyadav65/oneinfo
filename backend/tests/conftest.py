@@ -8,6 +8,8 @@ from pathlib import Path
 os.environ.setdefault("EMBEDDING_PROVIDER", "dev")
 os.environ.setdefault("LLM_PROVIDER", "dev")
 os.environ.setdefault("VIDEO_PROVIDER", "dev")
+os.environ.setdefault("SPEECH_PROVIDER", "dev")
+os.environ.setdefault("TRANSCRIPTION_PROVIDER", "dev")
 os.environ.setdefault("STORAGE_LOCAL_PATH", "./data/test-uploads")
 
 

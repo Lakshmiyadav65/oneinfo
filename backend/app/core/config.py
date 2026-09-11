@@ -99,6 +99,34 @@ class Settings(BaseSettings):
     # Lower case, and the API is strict about it.
     sarvam_speaker: str = "shubh"
 
+    # The other half of the Sarvam relationship: the voice says a line, this
+    # reads one back. A creator who has no chat history to paste usually
+    # does have a year of their own reels, and what they said in them is the
+    # closest thing to a record of how they talk.
+    transcription_provider: Literal["dev", "sarvam"] = "dev"
+    sarvam_stt_model: str = "saaras:v3"
+    # Sarvam's real-time endpoint is documented at roughly 30 seconds per
+    # request, so audio is cut at pauses before it is sent. The cut is taken
+    # at the first pause after min, not at a target length: waiting for a
+    # target sails past the pause between a Telugu sentence and an English
+    # one, and a chunk holding both comes back entirely in whichever the
+    # model thought was dominant. Max is only the fallback for a stretch
+    # with no pause in it at all.
+    transcription_min_chunk_seconds: float = 1.0
+    transcription_max_chunk_seconds: float = 25.0
+    # Loudness below which audio counts as a pause, and how long a pause has
+    # to last to be a cut point. Less negative catches pauses under
+    # background music, which reels are rarely without.
+    transcription_silence_db: int = -30
+    transcription_silence_min_seconds: float = 0.3
+    # Downloads a reel. Absent from PATH, the reel routes fail with that as
+    # the message rather than a FileNotFoundError from deep in a subprocess.
+    ytdlp_path: str = "yt-dlp"
+    # A minute of 1080p reel lands near 15 MB, but nothing stops a creator
+    # pointing this at a twenty-minute video. Checked while streaming to
+    # disk, never after.
+    max_video_bytes: int = 200 * 1024 * 1024
+
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
     video_width: int = 1280

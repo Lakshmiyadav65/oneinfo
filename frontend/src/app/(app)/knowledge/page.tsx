@@ -13,12 +13,25 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
+import type { KnowledgeItem } from "@/types/knowledge";
 
 const STATUS_VARIANT = {
   processing: "default",
   ready: "success",
   failed: "destructive",
 } as const;
+
+// What the row calls each kind of source. "reel"/"video" would read as
+// storage formats; what a creator recognises is that these are the ones
+// that came from something they said out loud.
+const SOURCE_LABEL: Record<KnowledgeItem["source_type"], string> = {
+  pdf: "PDF",
+  docx: "DOCX",
+  txt: "TXT",
+  text: "Text",
+  reel: "Transcribed reel",
+  video: "Transcribed video",
+};
 
 export default function KnowledgePage() {
   const { toast } = useToast();
@@ -55,6 +68,7 @@ export default function KnowledgePage() {
           <h2 className="text-xl font-semibold text-foreground">Your Knowledge</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             The content you add here will help OneInfo create content in your style.
+            Paste a chat, upload a file, or add reels you have already posted.
           </p>
         </div>
         <Button onClick={() => setDialogOpen(true)}>
@@ -84,7 +98,7 @@ export default function KnowledgePage() {
         <EmptyState
           icon={BookOpen}
           title="No knowledge added yet"
-          description="Paste a chat or upload a document so OneInfo can create content in your style."
+          description="Paste a chat, upload a document, or add your own reels — OneInfo transcribes them and writes from what you already say."
           action={<Button onClick={() => setDialogOpen(true)}>Add Knowledge</Button>}
         />
       )}
@@ -96,7 +110,24 @@ export default function KnowledgePage() {
               <CardContent className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
-                  <p className="text-xs uppercase text-muted-foreground">{item.source_type}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {SOURCE_LABEL[item.source_type] ?? item.source_type}
+                  </p>
+                  {/*
+                    The link, for anything transcribed off the web. A reel is
+                    named after its caption once it has been read, and the
+                    caption alone is not enough to tell two of them apart.
+                  */}
+                  {item.source_url && (
+                    <a
+                      href={item.source_url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="mt-0.5 block truncate text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      {item.source_url}
+                    </a>
+                  )}
                   {item.status === "failed" && item.error_message && (
                     <p className="mt-1 text-xs text-destructive">{item.error_message}</p>
                   )}

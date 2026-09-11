@@ -1,5 +1,20 @@
 # Video Transcriber
 
+> **Where this fits.** This is the standalone tool — a CLI and a small
+> Streamlit UI — and it is where the pipeline below was worked out. The same
+> approach now also runs inside the app: `POST /knowledge/reels` and
+> `POST /knowledge/video` transcribe a creator's reels straight into My
+> Knowledge, via `backend/app/providers/transcription/`. Use this one for
+> transcribing something quickly, or for tuning the chunking flags against a
+> real video before setting the equivalents in `backend/.env`.
+>
+> Note the app does **not** reuse the `--script-style` names below. It offers
+> its own three project languages instead — English, Tenglish, Telugu — so a
+> creator is asked the same question there as in Create Video rather than a
+> second one in different words. The underlying modes are the same;
+> `mixed` is the only style here with no counterpart there.
+> See [`backend/README.md`](../backend/README.md#reels-as-knowledge).
+
 Takes a video — an Instagram Reel URL, or the path to any local video file — and outputs a
 text transcript ("script") of the spoken audio.
 
