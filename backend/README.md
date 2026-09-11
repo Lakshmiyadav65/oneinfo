@@ -103,6 +103,19 @@ Tests that need FFmpeg but not the database (`test_video_dev_provider.py`,
 `FFPROBE_PATH` aren't resolvable, and otherwise actually run FFmpeg and
 assert on the real output (playable, correct duration) — not mocked.
 
+## Migrations
+
+`alembic upgrade head` after pulling anything that changed a model. Skipping
+it is unusually painful here: SQLAlchemy selects every mapped column, so one
+un-run migration makes *every* request touching that table fail with a
+generic 500 at once — the document list, the viewer and the reel routes all
+broke together and none of them said why.
+
+So the server checks at startup. Behind, and it logs the exact command to
+run; behind in production, and it refuses to start, the same split
+`validate_for_startup` makes for dev-mock auth. A database it cannot reach
+is not treated as a mismatch — that would turn a blip into a failure to boot.
+
 ## Auth modes
 
 - **Dev** (default until Supabase is configured): send

@@ -1,11 +1,29 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.monitoring import configure_sentry
+from app.db.schema_check import verify_schema_is_current
+
+
+def _lifespan(settings: Settings):
+    """
+    Checked once, at boot, rather than discovered one broken endpoint at a
+    time. An un-run migration makes every request touching that table fail
+    with a generic 500, and the only clue is deep in a driver traceback.
+    """
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        await verify_schema_is_current(settings)
+        yield
+
+    return lifespan
 
 
 def create_app() -> FastAPI:
@@ -14,7 +32,7 @@ def create_app() -> FastAPI:
     settings.validate_for_startup()
     configure_sentry(settings)
 
-    app = FastAPI(title="OneInfo AI Video Creator API")
+    app = FastAPI(title="OneInfo AI Video Creator API", lifespan=_lifespan(settings))
 
     app.add_middleware(
         CORSMiddleware,
