@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,9 @@ class Script(Base):
     language: Mapped[str] = mapped_column(String, nullable=False, default="english")
     content: Mapped[str] = mapped_column(Text, nullable=False)
     estimated_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The researched topics the Value beat was spoken from, in order.
+    # Null for scripts written before the agent worked them out.
+    roadmap: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[ContentStatus] = mapped_column(
         String, nullable=False, default=ContentStatus.draft, index=True
     )

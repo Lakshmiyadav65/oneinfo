@@ -26,9 +26,16 @@ const STATUS_VARIANT: Record<Project["status"], NonNullable<BadgeProps["variant"
 export function WorkflowHeader({
   project,
   activeStep,
+  onLanguageChanged,
 }: {
   project: Project;
   activeStep: CreateStepKey;
+  /**
+   * Called once a language change has rewritten this project's text. The
+   * step owns its own data, so it is the only thing that can read the new
+   * wording back - the header cannot do it on its behalf.
+   */
+  onLanguageChanged?: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -49,7 +56,11 @@ export function WorkflowHeader({
             in who realises the language is wrong should not have to start a
             new project to change it.
           */}
-          <LanguageSwitcher projectId={project.id} language={project.language} />
+          <LanguageSwitcher
+            projectId={project.id}
+            language={project.language}
+            onChanged={onLanguageChanged}
+          />
           <Badge variant={STATUS_VARIANT[project.status]}>{project.status}</Badge>
         </div>
       </div>

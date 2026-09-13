@@ -7,7 +7,9 @@ import { getProject } from "@/lib/api/projects";
 import { getStoryboard, generateStoryboard } from "@/lib/api/storyboard";
 import { setProjectEnvironment } from "@/lib/api/projects";
 import { getFaceSetup } from "@/lib/api/creator-face";
+import { voiceProject } from "@/lib/api/generation";
 import { CreatorFacePrompt } from "@/components/create/CreatorFacePrompt";
+import { VideoLengthControl } from "@/components/create/VideoLengthControl";
 import { EnvironmentSetup } from "@/components/create/EnvironmentSetup";
 import { SceneCard } from "@/components/create/SceneCard";
 import { storyboardCost } from "@/lib/workflow/scene-cost";
@@ -33,6 +35,7 @@ export function StoryboardView({ projectId }: { projectId: string }) {
   const storyboardQuery = useAsyncData(() => getStoryboard(projectId), [projectId]);
   const faceQuery = useAsyncData(() => getFaceSetup(), []);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isVoicing, setIsVoicing] = useState(false);
   const [override, setOverride] = useState<Storyboard | null>(null);
   const [autoFailed, setAutoFailed] = useState<string | null>(null);
   // Same guard as the script step: set synchronously so a re-render cannot
@@ -147,6 +150,46 @@ export function StoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
+  async function voiceEveryScene() {
+    setIsVoicing(true);
+    try {
+      const done = await voiceProject(projectId);
+      if (done.voiced.length === 0) {
+        toast({
+          title: "Nothing to voice yet",
+          description:
+            "No scene has a clip to speak over. Generate a scene first, then come back.",
+        });
+        return;
+      }
+      // The overrunning scenes are the only part a creator has to act on:
+      // a line longer than its clip cannot be made to fit by speaking
+      // faster, and which words go is their decision.
+      const tail = [
+        done.skipped.length > 0
+          ? `${done.skipped.length} not generated yet.`
+          : null,
+        done.overrunning.length > 0
+          ? `Scene ${done.overrunning.join(", ")} runs longer than its clip, so the end is cut off. Shorten the line.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      toast({
+        title: `${done.voiced.length} ${done.voiced.length === 1 ? "scene" : "scenes"} now in your voice`,
+        description: tail || "Every generated scene sounds like the same person.",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't set one voice",
+        description: errorDescription(err),
+      });
+    } finally {
+      setIsVoicing(false);
+    }
+  }
+
   async function handleGenerate() {
     setIsGenerating(true);
     try {
@@ -170,7 +213,17 @@ export function StoryboardView({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      <WorkflowHeader project={projectData} activeStep="storyboard" />
+      <WorkflowHeader
+        project={projectData}
+        activeStep="storyboard"
+        onLanguageChanged={() => {
+          // The override holds the storyboard this page last edited. It is
+          // now behind the server's, so it has to go before the refetch.
+          setOverride(null);
+          project.retry();
+          storyboardQuery.retry();
+        }}
+      />
 
       {storyboardQuery.status === "loading" && (
         <div className="space-y-2">
@@ -245,6 +298,50 @@ export function StoryboardView({ projectId }: { projectId: string }) {
             >
               Regenerate Storyboard
             </Button>
+          </div>
+
+          {/*
+            Beside Regenerate, because that is the button that spends it.
+            Video is billed by the second, so this is the setting with the
+            largest effect on the bill - and the only one that cannot be
+            changed once the scenes exist.
+          */}
+          <VideoLengthControl
+            projectId={projectId}
+            output={projectData.output_settings}
+            actualSeconds={storyboard.scenes.reduce(
+              (sum, s) => sum + s.duration_seconds,
+              0
+            )}
+            disabled={isGenerating}
+            onSaved={() => void project.refresh()}
+          />
+
+          {/*
+            One voice across the whole video, which the prompt can ask for
+            but cannot guarantee: Veo generates every clip with no memory of
+            the last, so it casts a narrator per clip and a video comes back
+            with a woman reading one scene and a man the next. Speech here
+            comes from one configured speaker, so it matches by construction.
+
+            Free, and offered beside the scenes rather than inside one,
+            because doing it scene by scene is how the voices drifted apart
+            in the first place.
+          */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card p-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              isLoading={isVoicing}
+              disabled={isGenerating}
+              onClick={() => void voiceEveryScene()}
+            >
+              Use one voice for every scene
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Free. Replaces the voice on the clips you have already generated
+              with your own, so the whole video sounds like one person.
+            </span>
           </div>
 
           {!storyboard.qa_passed && storyboard.qa_issues.length > 0 && (

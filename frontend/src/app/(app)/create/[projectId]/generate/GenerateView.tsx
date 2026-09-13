@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
+import { downloadSlug } from "@/lib/utils/filename";
 import type { GenerationJob, VideoOutput } from "@/types/generation";
 
 function errorDescription(err: unknown): string | undefined {
@@ -172,14 +173,7 @@ export function GenerateView({ projectId }: { projectId: string }) {
 
   // Named after the project so a folder of downloads is still legible a
   // week later. Punctuation out, because it lands in a filename.
-  //
-  // Marks are kept alongside letters and digits: Telugu vowel signs are
-  // marks, not letters, and dropping them turned "తెలుగు" into "త-ల-గ".
-  const downloadName =
-    project.data.title
-      .replace(/[^\p{L}\p{N}\p{M}]+/gu, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 60) || "video";
+  const downloadName = downloadSlug(project.data.title, "video");
   const duration = formatDuration(output?.duration_seconds ?? null);
   const size = formatSize(output?.file_size_bytes ?? null);
   const summary = [
@@ -192,7 +186,14 @@ export function GenerateView({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      <WorkflowHeader project={project.data} activeStep="generate" />
+      <WorkflowHeader
+        project={project.data}
+        activeStep="generate"
+        onLanguageChanged={() => {
+          project.retry();
+          storyboard.retry();
+        }}
+      />
 
       <GenerateDialog
         open={askingSettings}

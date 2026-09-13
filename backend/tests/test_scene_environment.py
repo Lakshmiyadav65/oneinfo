@@ -228,3 +228,233 @@ def test_render_size_follows_shape_and_resolution():
         for resolution in Resolution:
             width, height = size(aspect, resolution)
             assert width % 2 == 0 and height % 2 == 0
+
+
+def test_b_roll_says_nobody_is_in_the_shot():
+    """
+    An unanswered question is not an empty answer.
+
+    A b-roll prompt used to describe a studio, hand over a line to say, and
+    never mention who was in frame. Veo filled the silence with a presenter
+    of its own, so the creator's video cut from them to a stranger reading
+    their script - which looks less like a missing shot than like a
+    different creator.
+    """
+    prompt = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action="explaining the roadmap",
+        features_creator=False,
+        dialogue="First, master the basics.",
+    )
+
+    assert "nobody on camera" in prompt
+    negative = prompt.split("NEGATIVE PROMPT:")[1]
+    assert "No people on camera" in negative
+    assert "No face" in negative
+
+
+def test_a_shot_of_people_is_not_told_to_have_none_in_it():
+    """
+    People are what the creator asked for here, so the negatives must not
+    argue with the line above them. A prompt that says both is a prompt the
+    model resolves however it likes.
+    """
+    prompt = compose_visual_prompt(
+        SceneEnvironment(subject=Subject.people),
+        action="students in a lab",
+        features_creator=False,
+    )
+
+    assert "People are the subject" in prompt
+    assert "No people on camera" not in prompt
+
+
+def test_an_on_camera_scene_rules_out_everyone_else():
+    """The other half of the same problem: a second invented person standing
+    beside the creator, who is the only one the reference photo describes."""
+    prompt = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action="talking to camera",
+        features_creator=True,
+        appearance_description="A woman in her thirties",
+    )
+
+    assert "No other people in the shot" in prompt
+    assert "No people on camera" not in prompt
+
+
+def test_an_on_camera_scene_with_no_appearance_on_file_still_names_a_presenter():
+    """Otherwise it falls through to the b-roll wording and tells the model
+    nobody is in a shot the reference photo is about to be attached to."""
+    prompt = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action="talking to camera",
+        features_creator=True,
+    )
+
+    assert "speaks directly to camera" in prompt
+    assert "nobody on camera" not in prompt
+
+
+def test_the_voice_is_named_on_b_roll_too():
+    """
+    The bug this guards, reported as "the b-rolls use both female and male
+    voices". The voice was named only on scenes the creator appeared in, so
+    every b-roll clip was cast from nothing - and Veo, asked for narration
+    and told nothing about the narrator, picked a different one per clip.
+    Being off screen changes the picture, not who is speaking.
+    """
+    voice = "Warm, conversational, Indian English accent"
+
+    b_roll = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action="typing at a laptop",
+        features_creator=False,
+        voice_description=voice,
+    )
+
+    assert voice in b_roll
+    assert "off-screen voiceover" in b_roll
+
+
+def test_every_scene_asks_for_one_narrator():
+    """
+    Said even with no description on file, and said on every scene. Veo has
+    no memory between clips, so this is the only thing holding one voice
+    across a video generated one clip at a time - the same reason the
+    appearance is repeated word for word.
+    """
+    for features_creator in (True, False):
+        prompt = compose_visual_prompt(
+            environment_for_preset(EnvironmentPreset.youtube_studio),
+            action="talking to camera",
+            features_creator=features_creator,
+        )
+
+        assert "One narrator for the whole video" in prompt
+
+
+@pytest.mark.parametrize("framing", list(CameraFraming))
+def test_every_framing_carries_a_lens(framing):
+    """
+    A shot description with no optics in it is the largest single tell that
+    footage was rendered. Asked for "a close-up" and nothing else, Veo holds
+    the whole room in focus at once - which no camera does, and which the
+    eye reads as a game engine rather than as a mistake.
+    """
+    prompt = compose_visual_prompt(
+        SceneEnvironment(camera_framing=framing),
+        action="talking to camera",
+        features_creator=False,
+    )
+
+    camera = prompt.split("CAMERA:")[1].split("LIGHTING:")[0]
+    assert "mm lens" in camera
+    assert "f/" in camera
+
+
+@pytest.mark.parametrize("style", list(VisualStyle))
+def test_realism_is_asked_for_whatever_the_style(style):
+    """
+    None of the styles ask for a drawing - they ask for footage and differ
+    in how it is graded. What separated the output from footage was never
+    the grade: skin with no pores, cloth with no weave, light from
+    everywhere at once, and a backdrop with nothing behind it.
+    """
+    prompt = compose_visual_prompt(
+        SceneEnvironment(visual_style=style),
+        action="talking to camera",
+        features_creator=True,
+        appearance_description="A woman in her thirties",
+    )
+
+    realism = prompt.split("REALISM:")[1].split("NEGATIVE PROMPT:")[0]
+    assert "not a render" in realism
+    assert "visible pores" in realism
+    assert "never a flat backdrop" in realism
+
+
+def test_the_render_tells_are_named_one_at_a_time():
+    """"No AI-generated look" is a category. These are the artefacts a
+    viewer actually notices, and naming them beats naming the category."""
+    negative = compose_visual_prompt(
+        SceneEnvironment(), action="talking", features_creator=False
+    ).split("NEGATIVE PROMPT:")[1]
+
+    for tell in ("plastic or waxy skin", "warped, extra or merged fingers",
+                 "flat empty backdrop", "video-game look"):
+        assert tell in negative
+
+
+def test_the_set_does_not_argue_with_the_depth_instruction():
+    """The studio preset used to ask for "a clean background" while the
+    realism block asked for never a flat backdrop. A prompt that says both
+    is one the model resolves however it likes."""
+    prompt = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action="talking to camera",
+        features_creator=False,
+    )
+
+    assert "clean background" not in prompt
+    assert "never a flat backdrop" in prompt
+
+
+def test_an_action_that_names_a_person_is_overruled_on_b_roll():
+    """
+    The reason the first fix was not enough. Two things outrank a negative:
+    the set, which can be a room built for someone to sit in, and the
+    ACTION, which storyboards written before the agent knew better fill with
+    "someone sketching on a whiteboard". Both are positive instructions, and
+    a positive instruction beats an entry on a list of things to avoid.
+    """
+    prompt = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action="fast-paced montage of someone sketching diagrams and typing code",
+        features_creator=False,
+    )
+
+    scene = prompt.split("SCENE:")[1].split("DIALOGUE:")[0]
+    assert "Nobody appears in this shot at all" in scene
+    assert "no hands" in scene
+    # Stated after the set, so it is the last word rather than the first.
+    assert scene.index("Nobody appears") > scene.index("creator studio")
+
+
+def test_the_override_leaves_a_deliberate_shot_of_people_alone():
+    prompt = compose_visual_prompt(
+        SceneEnvironment(subject=Subject.people),
+        action="students working in a lab",
+        features_creator=False,
+    )
+
+    assert "Nobody appears in this shot at all" not in prompt
+
+
+async def test_the_agent_is_told_b_roll_means_no_people():
+    """
+    The source of the bug rather than the symptom. "Without the creator in
+    frame" excluded one person and invited another, and the agent duly
+    wrote "someone sketching on a whiteboard" into a b-roll visual.
+    """
+    from app.agents.storyboard_agent import run_storyboard_agent
+    from app.providers.llm.dev_provider import DevLLMProvider
+
+    seen: dict[str, str] = {}
+
+    class Capturing(DevLLMProvider):
+        async def generate_structured(self, prompt, schema, *, model=None):
+            seen["prompt"] = prompt
+            return await super().generate_structured(prompt, schema, model=model)
+
+    await run_storyboard_agent(
+        Capturing(),
+        script_content='Hook\n"Something."',
+        estimated_duration_seconds=30,
+        allowed_durations=(4, 6, 8),
+        creator_on_camera=True,
+        appearance_description="A woman in her thirties",
+    )
+
+    assert "NO PEOPLE AT ALL" in seen["prompt"]
+    assert "'someone'" in seen["prompt"]

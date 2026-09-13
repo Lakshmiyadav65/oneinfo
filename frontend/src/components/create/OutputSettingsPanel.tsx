@@ -24,6 +24,13 @@ import { storyboardCost, storyboardCostUnder } from "@/lib/workflow/scene-cost";
  * Clip length is not here. Flow offers it, but a scene's length belongs to
  * the scene, where it is weighed against what that scene has to say - a
  * second control on this panel would silently overwrite all of them.
+ *
+ * Nor is the video's total length, for a different reason. Everything on
+ * this panel is read when a clip is generated, and this panel is shown at
+ * the moment of generating one. Total length is read when the storyboard is
+ * written, which by then already happened - so the control sat here looking
+ * live and did nothing at all. It belongs on the storyboard step, and that
+ * is where it now is.
  */
 
 export function OutputSettingsPanel({

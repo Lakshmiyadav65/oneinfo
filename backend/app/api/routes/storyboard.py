@@ -10,6 +10,8 @@ from app.models.creator import Creator
 from app.models.storyboard import Storyboard
 from app.schemas.storyboard import (
     ProjectEnvironmentIn,
+    SceneDialogueIn,
+    SceneDurationIn,
     SceneEnvironmentIn,
     SceneInclusionIn,
     SceneOnCameraIn,
@@ -51,6 +53,36 @@ async def set_scene_on_camera(
 ) -> Storyboard:
     return await storyboard_service.set_scene_on_camera(
         db, settings, creator.id, project_id, scene_id, payload.features_creator
+    )
+
+
+@router.patch("/scenes/{scene_id}/duration", response_model=StoryboardOut)
+async def set_scene_duration(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    payload: SceneDurationIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Storyboard:
+    """This clip's length, or null to go back to fitting it to the dialogue."""
+    return await storyboard_service.set_scene_duration(
+        db, settings, creator.id, project_id, scene_id, payload.duration_seconds
+    )
+
+
+@router.patch("/scenes/{scene_id}/dialogue", response_model=StoryboardOut)
+async def set_scene_dialogue(
+    project_id: uuid.UUID,
+    scene_id: uuid.UUID,
+    payload: SceneDialogueIn,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Storyboard:
+    """What this scene says. The clip length and the prompt follow the words."""
+    return await storyboard_service.set_scene_dialogue(
+        db, settings, creator.id, project_id, scene_id, payload.voiceover
     )
 
 

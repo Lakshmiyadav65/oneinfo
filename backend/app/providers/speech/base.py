@@ -27,6 +27,25 @@ LANGUAGE_CODES = {
 }
 
 
+# Roughly how fast a line is read out loud at pace 1.0. Words rather than
+# characters because Tenglish is romanised Telugu - the words run long in
+# letters without taking any longer to say, so counting characters
+# systematically overestimates exactly the language this app is mostly used in.
+WORDS_PER_SECOND = 2.6
+
+
+def speech_seconds(text: str) -> float:
+    """
+    How long a line takes to say, near enough to plan a scene around.
+
+    An estimate, and deliberately a cheap one: the alternative is
+    synthesising the line to find out, which costs a paid call per scene
+    during storyboarding - before the creator has agreed to any of it.
+    Anything downstream that needs the real number measures the audio.
+    """
+    return len([word for word in text.split() if word.strip()]) / WORDS_PER_SECOND
+
+
 class SpeechProvider(Protocol):
     async def synthesize(self, text: str, *, language_code: str, pace: float) -> bytes:
         """The line spoken, as WAV bytes."""
@@ -54,3 +73,23 @@ def pace_to_fit(spoken_seconds: float, clip_seconds: float) -> float:
     if spoken_seconds <= clip_seconds:
         return 1.0
     return min(MAX_PACE, spoken_seconds / clip_seconds)
+
+
+# The voices bulbul:v3 will speak in, exactly as the API lists them.
+#
+# Not a guess and not copied from documentation: asked for a speaker it does
+# not have, Sarvam answers "Available speakers for bulbul:v3 are: ..." and
+# this is that answer. Sent back to the creator so they can choose one and
+# hear it, rather than having a single voice set once in an environment
+# variable for everybody on the deployment.
+#
+# No gender labels. Which of these sounds right is a judgement about a voice,
+# and the honest way to make it is to listen - which is why the choice ships
+# with a preview rather than with adjectives.
+SARVAM_SPEAKERS: tuple[str, ...] = (
+    "aditya", "ritu", "ashutosh", "priya", "neha", "rahul", "pooja", "rohan",
+    "simran", "kavya", "amit", "dev", "ishita", "shreya", "ratan", "varun",
+    "manan", "sumit", "roopa", "kabir", "aayan", "shubh", "advait", "anand",
+    "tanya", "tarun", "sunny", "mani", "gokul", "vijay", "shruti", "suhani",
+    "mohit", "kavitha", "rehan", "soham", "rupali",
+)

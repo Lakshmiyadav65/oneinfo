@@ -88,3 +88,79 @@ def test_a_trailing_chunk_shorter_than_the_overlap_adds_nothing():
     chunks = chunk_text(original, 400, 60)
 
     assert rejoin_chunks(chunks, 60) == original
+
+
+async def test_a_creator_nobody_has_seen_before_can_bring_their_own_knowledge(client):
+    """
+    The question this whole layer exists to answer: someone signs in with an
+    account that has never existed, pastes their knowledge, and builds from
+    it - without seeing anyone else's, and without anyone having seeded a row
+    for them first.
+
+    It could not be asked at all until recently. The dev verifier accepted
+    exactly two ids, so a third creator could not be created, and the app
+    read as single-tenant when only its front door was.
+    """
+    newcomer = auth_headers("meera@runclub.in")
+
+    # No row is seeded for her. The first authenticated request makes one.
+    empty = await client.get("/knowledge", headers=newcomer)
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    filed = await client.post(
+        "/knowledge/text",
+        json={
+            "title": "Couch to 10K",
+            "content": (
+                "Run-walk intervals. Week one is sixty seconds running and "
+                "ninety walking. Never add more than ten percent mileage in "
+                "a week or you will get shin splints."
+            ),
+        },
+        headers=newcomer,
+    )
+    assert filed.status_code == 201, filed.text
+
+    hers = await client.get("/knowledge", headers=newcomer)
+    assert [item["title"] for item in hers.json()] == ["Couch to 10K"]
+
+    # And she is nobody else's problem, in either direction.
+    theirs = await client.get("/knowledge", headers=auth_headers("creator-a"))
+    assert all(item["title"] != "Couch to 10K" for item in theirs.json())
+
+
+async def test_a_new_creator_builds_a_project_from_their_own_knowledge(client):
+    """
+    Past the knowledge layer and into the work. A project, its hooks and its
+    script all have to be filed against the creator who asked for them, or a
+    second creator's video is built out of the first one's material.
+    """
+    newcomer = auth_headers("meera@runclub.in")
+    await client.post(
+        "/knowledge/text",
+        json={"title": "My voice", "content": "Short sentences. Plain English. No jargon."},
+        headers=newcomer,
+    )
+
+    created = await client.post(
+        "/projects",
+        json={"idea": "A beginner roadmap for a first 10K", "language": "english"},
+        headers=newcomer,
+    )
+    assert created.status_code == 201, created.text
+    project_id = created.json()["id"]
+
+    hooks = await client.post(f"/projects/{project_id}/hooks/generate", headers=newcomer)
+    assert hooks.status_code == 200, hooks.text
+    assert hooks.json()
+
+    # The project belongs to her and to nobody else.
+    mine = await client.get("/projects", headers=newcomer)
+    assert [p["id"] for p in mine.json()] == [project_id]
+
+    others = await client.get("/projects", headers=auth_headers("creator-a"))
+    assert all(p["id"] != project_id for p in others.json())
+
+    denied = await client.get(f"/projects/{project_id}", headers=auth_headers("creator-a"))
+    assert denied.status_code == 404

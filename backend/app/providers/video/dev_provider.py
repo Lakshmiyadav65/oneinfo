@@ -13,10 +13,10 @@ class DevVideoProvider:
     """
     Generates a real, playable placeholder clip locally via FFmpeg instead
     of calling Veo — a solid-color card naming the visual_prompt (what a
-    real provider would have depicted) and a silent audio track. The
-    scene's actual caption is burned in later, uniformly, by
-    rendering_service — real Veo output needs that same caption pass, so
-    it doesn't belong here. Proves the full asset/storage/rendering
+    real provider would have depicted) and a silent audio track. No
+    caption is drawn on it, and none is added later either: rendering
+    stopped burning captions in, because they laid a second line of text
+    over video already carrying the spoken line. Proves the full asset/storage/rendering
     pipeline end-to-end without Google Cloud credentials. Swap to
     VeoVideoProvider for real generated video.
     """

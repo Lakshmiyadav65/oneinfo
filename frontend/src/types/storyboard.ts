@@ -4,7 +4,20 @@ export type StoryboardScene = {
   id: string;
   order: number;
   duration_seconds: number;
+  /** The length the creator picked. Null while it follows the dialogue. */
+  duration_override: number | null;
   voiceover: string;
+  /**
+   * When the creator last rewrote that line, or null while it is still the
+   * one the storyboard agent wrote. Any take made before this was generated
+   * from words the scene no longer says.
+   */
+  dialogue_edited_at: string | null;
+  /**
+   * How long the line takes to say, by the server's own estimate. Compared
+   * against duration_seconds to warn that an edit no longer fits its clip.
+   */
+  speech_seconds: number;
   visual_prompt: string;
   caption: string;
   /** Creator is on camera. Costs several times a b-roll scene. */

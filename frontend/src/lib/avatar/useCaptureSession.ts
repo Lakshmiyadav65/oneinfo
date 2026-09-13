@@ -127,6 +127,44 @@ function grabFrame(video: HTMLVideoElement): Promise<Blob> {
   });
 }
 
+/**
+ * MediaPipe's WebAssembly build writes TensorFlow Lite's native stderr to
+ * console.error - including "INFO: Created TensorFlow Lite XNNPACK delegate
+ * for CPU.", which it prints on the first detectForVideo call of a perfectly
+ * healthy session. Next's dev overlay treats any console.error as a fatal
+ * Console Error, so that one informational line covered the screen at the
+ * exact moment the creator was being asked to hold still.
+ *
+ * Emscripten takes a `printErr` override off the module object it is handed,
+ * and the tasks-vision loader hands it `self.Module` when that global is set,
+ * which is the one seam for redirecting these lines - patching console.error
+ * itself would have to stay patched for the life of the page, since the
+ * chatter comes from detection rather than from loading.
+ *
+ * Only the chatter moves. Anything that names itself an error still goes to
+ * console.error, because a model that failed to load is worth interrupting for.
+ */
+const NATIVE_ERROR = /^\s*(ERROR|FATAL|[EF]\d{4})/;
+
+async function withQuietNativeLogs<T>(create: () => Promise<T>): Promise<T> {
+  const globals = globalThis as unknown as { Module?: unknown };
+  const previous = globals.Module;
+  globals.Module = {
+    printErr: (...parts: unknown[]) => {
+      const line = parts.join(" ");
+      if (NATIVE_ERROR.test(line)) console.error(line);
+      else console.debug(line);
+    },
+  };
+  try {
+    return await create();
+  } finally {
+    // The loader clears this itself once the module is built; restoring
+    // covers the throw, where it would otherwise be left behind.
+    globals.Module = previous;
+  }
+}
+
 export function useCaptureSession() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const landmarkerRef = useRef<{ detectForVideo: (v: HTMLVideoElement, t: number) => LandmarkerResult; close?: () => void } | null>(null);
@@ -322,12 +360,14 @@ export function useCaptureSession() {
       try {
         const vision = await import("@mediapipe/tasks-vision");
         const fileset = await vision.FilesetResolver.forVisionTasks("/mediapipe/wasm");
-        landmarkerRef.current = (await vision.FaceLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: "/mediapipe/face_landmarker.task" },
-          runningMode: "VIDEO",
-          numFaces: 1,
-          outputFacialTransformationMatrixes: true,
-        })) as unknown as typeof landmarkerRef.current;
+        landmarkerRef.current = (await withQuietNativeLogs(() =>
+          vision.FaceLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: "/mediapipe/face_landmarker.task" },
+            runningMode: "VIDEO",
+            numFaces: 1,
+            outputFacialTransformationMatrixes: true,
+          })
+        )) as unknown as typeof landmarkerRef.current;
       } catch {
         stream.getTracks().forEach((track) => track.stop());
         fail(

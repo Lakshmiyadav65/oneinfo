@@ -24,6 +24,13 @@ export type FaceSetup = {
   appearance_description: string | null;
   voice_description: string | null;
   /**
+   * Which synthesised voice speaks this creator's videos, and the voices
+   * they can choose between. Null means the deployment's configured
+   * default, which is what everyone had before there was a choice.
+   */
+  speech_speaker: string | null;
+  speech_speakers: string[];
+  /**
    * The capture the images were cut from, when there is one. Null means they
    * were uploaded, or the creator deleted the recording and kept the frames.
    */

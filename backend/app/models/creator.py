@@ -32,6 +32,11 @@ class Creator(Base):
     # creator's look and voice stable from one scene to the next.
     appearance_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     voice_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Which synthesised voice speaks this creator's videos. Null means the
+    # deployment's configured default, which is what everyone had before
+    # there was a choice. Named speakers come from the speech provider - see
+    # app/providers/speech.
+    speech_speaker: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

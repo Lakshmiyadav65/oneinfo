@@ -47,7 +47,18 @@ class StoryboardScene(Base):
     )
     order: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The length the creator picked, or null to keep deriving it from the
+    # dialogue. duration_seconds is the effective value either way - this
+    # only records whether anybody chose it.
+    duration_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
     voiceover: Mapped[str] = mapped_column(Text, nullable=False)
+    # When the creator last rewrote that line, or null while it is still the
+    # one the storyboard agent wrote. A clip generated before this timestamp
+    # says something the scene no longer says - which is invisible otherwise,
+    # since the old take sits in the list looking exactly like a current one.
+    dialogue_edited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     visual_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     caption: Mapped[str] = mapped_column(Text, nullable=False)
     # What the storyboard agent said happens in the shot, kept apart from the

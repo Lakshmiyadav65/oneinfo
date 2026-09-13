@@ -8,11 +8,16 @@ import { SESSION_COOKIE } from "@/lib/auth/mock-provider";
  * against the authenticated identity, never a client-supplied creator id.
  */
 
+// Every signed-in destination belongs here AND in `config.matcher` below. The
+// two are spelled differently - a bare prefix here, a `/:path*` suffix there -
+// which is exactly how one of them ends up forgotten.
 const PROTECTED_PATHS = [
   "/dashboard",
   "/knowledge",
   "/create",
   "/projects",
+  "/media",
+  "/posters",
   "/settings",
 ];
 
@@ -51,6 +56,8 @@ export const config = {
     "/knowledge/:path*",
     "/create/:path*",
     "/projects/:path*",
+    "/media/:path*",
+    "/posters/:path*",
     "/settings/:path*",
   ],
 };

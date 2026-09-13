@@ -41,14 +41,32 @@ export function suggestIdeas(language?: ProjectLanguage): Promise<IdeaSuggestion
 }
 
 /**
- * Changes the language later steps generate in. Existing hooks and scripts
- * are left as they are — see project_service.update_language.
+ * What a language change rewrote. Counts rather than content: the new text
+ * arrives with the next read of each step.
+ */
+export type Retranslation = {
+  hooks: number;
+  script: boolean;
+  scenes: number;
+  /** Scene numbers whose clips were generated in the old language. */
+  scenes_with_clips: number[];
+};
+
+export type LanguageChange = { project: Project; retranslated: Retranslation };
+
+/**
+ * Changes the project's language and restates what is already written in
+ * it — hooks, script and scene dialogue, keeping every id, selection and
+ * approval where it was. See localization_service.
+ *
+ * Clips already generated are left alone. They were paid for, and they are
+ * marked as speaking the old line rather than being replaced.
  */
 export function updateProjectLanguage(
   projectId: string,
   language: ProjectLanguage
-): Promise<Project> {
-  return api.patch<Project>(`/projects/${projectId}`, { language });
+): Promise<LanguageChange> {
+  return api.patch<LanguageChange>(`/projects/${projectId}`, { language });
 }
 
 /**

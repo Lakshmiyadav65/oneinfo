@@ -5,6 +5,10 @@
  * creator's choices rather than configuration. Clip length is deliberately
  * not among them: a scene's length is decided per scene in the storyboard,
  * where it can be weighed against what that scene has to say.
+ *
+ * `target_duration_seconds` is a budget for the whole video, not that
+ * setting. The storyboard spends it across as many scenes as it needs, and
+ * each scene is still sized to the line it has to say.
  */
 
 export type AspectRatio = "16:9" | "9:16";
@@ -12,12 +16,15 @@ export type Resolution = "720p" | "1080p";
 /** Named by what is being chosen, not by model id: ids change every release. */
 export type ModelTier = "lite" | "fast";
 export type Takes = 1 | 2 | 3 | 4;
+/** Null means "however long the script turns out to be". */
+export type TargetDuration = 15 | 30 | 45 | 60 | null;
 
 export type OutputSettings = {
   aspect_ratio: AspectRatio;
   resolution: Resolution;
   model_tier: ModelTier;
   takes: Takes;
+  target_duration_seconds: TargetDuration;
 };
 
 export const DEFAULT_OUTPUT_SETTINGS: OutputSettings = {
@@ -25,6 +32,7 @@ export const DEFAULT_OUTPUT_SETTINGS: OutputSettings = {
   resolution: "720p",
   model_tier: "lite",
   takes: 1,
+  target_duration_seconds: null,
 };
 
 /**
@@ -36,6 +44,7 @@ export const DEFAULT_OUTPUT_SETTINGS: OutputSettings = {
  */
 export function summarizeOutput(output: OutputSettings): string {
   const parts = ["Video", output.aspect_ratio, output.resolution];
+  if (output.target_duration_seconds) parts.push(`~${output.target_duration_seconds}s`);
   if (output.model_tier === "fast") parts.push("higher quality");
   if (output.takes > 1) parts.push(`x${output.takes}`);
   return parts.join(" · ");

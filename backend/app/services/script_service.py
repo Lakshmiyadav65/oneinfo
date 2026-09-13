@@ -77,6 +77,10 @@ async def _write_script(
         language=output.language,
         content=render_script(beats),
         estimated_duration_seconds=output.estimated_duration_seconds,
+        # Kept beside the lines rather than thrown away once they are
+        # written: this is what the creator checks the script against, and
+        # what says why the Value beat names what it names.
+        roadmap=[step.model_dump() for step in output.roadmap] or None,
         status=ContentStatus.draft,
     )
     db.add(script)
@@ -157,6 +161,7 @@ async def restore_script_version(
         language=source.language,
         content=source.content,
         estimated_duration_seconds=source.estimated_duration_seconds,
+        roadmap=source.roadmap,
         status=ContentStatus.draft,
     )
     db.add(script)

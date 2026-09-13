@@ -154,7 +154,14 @@ export function HooksView({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      <WorkflowHeader project={project.data} activeStep="hooks" />
+      <WorkflowHeader
+        project={project.data}
+        activeStep="hooks"
+        onLanguageChanged={() => {
+          project.retry();
+          hooksQuery.retry();
+        }}
+      />
 
       <Card>
         <CardContent className="space-y-4 p-6">

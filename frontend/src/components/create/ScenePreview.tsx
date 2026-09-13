@@ -249,6 +249,21 @@ export function ScenePreview({
 
   const hasClip = takes.length > 0;
 
+  /**
+   * Clips generated before the creator last rewrote the line.
+   *
+   * They are still perfectly good video, and they say something this scene
+   * no longer says. Nothing on a take tells them apart otherwise, and the
+   * one that is wrong is the one that was paid for first - so it is the one
+   * a creator is most likely to keep by accident.
+   */
+  const editedAt = scene.dialogue_edited_at
+    ? new Date(scene.dialogue_edited_at).getTime()
+    : null;
+  const isFromAnOlderLine = (take: SceneTake) =>
+    editedAt !== null && new Date(take.created_at).getTime() < editedAt;
+  const staleCount = takes.filter(isFromAnOlderLine).length;
+
   return (
     <div className="space-y-2 pt-1">
       <GenerateDialog
@@ -258,6 +273,7 @@ export function ScenePreview({
         output={output}
         storyboard={storyboard}
         scene={scene}
+        onSceneChanged={onSettingsSaved}
         onConfirmed={async () => {
           onSettingsSaved();
           await handleGenerate();
@@ -335,6 +351,31 @@ export function ScenePreview({
       )}
 
       {/*
+        The answer to "which of these do I keep?" when the words moved under
+        them. Said here rather than left to the timestamps, which nobody
+        reads, and stated as a fact rather than as a prompt to spend: the
+        clip is still watchable, and regenerating it is billed.
+      */}
+      {staleCount > 0 && (
+        <div className="flex gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+          <AlertTriangle
+            className="mt-0.5 size-4 shrink-0 text-amber-500"
+            aria-hidden="true"
+          />
+          <p className="text-xs text-foreground">
+            You changed this line after{" "}
+            {staleCount === takes.length
+              ? takes.length === 1
+                ? "this clip was made"
+                : "these clips were made"
+              : `${staleCount} of these clips were made`}
+            . They still say the old words. Generate again to hear the new
+            line, or keep what you have.
+          </p>
+        </div>
+      )}
+
+      {/*
         Side by side, newest on the left. Two columns rather than a switcher:
         the question is which of these is better, and a control that shows
         one at a time makes the creator answer it from memory.
@@ -366,15 +407,26 @@ export function ScenePreview({
                     isSelected ? "border-primary bg-primary/5" : "border-border"
                   )}
                 >
-                  {label && (
+                  {(label || isFromAnOlderLine(take)) && (
                     <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={cn(
-                          "text-[11px] font-semibold uppercase tracking-wider",
-                          runIndex === 0 ? "text-foreground" : "text-muted-foreground"
+                      <span className="flex items-center gap-1.5">
+                        {label && (
+                          <span
+                            className={cn(
+                              "text-[11px] font-semibold uppercase tracking-wider",
+                              runIndex === 0
+                                ? "text-foreground"
+                                : "text-muted-foreground"
+                            )}
+                          >
+                            {label}
+                          </span>
                         )}
-                      >
-                        {label}
+                        {isFromAnOlderLine(take) && (
+                          <span className="inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                            Older line
+                          </span>
+                        )}
                       </span>
                       {isSelected && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">

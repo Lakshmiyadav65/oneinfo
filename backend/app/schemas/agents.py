@@ -48,15 +48,54 @@ class ScriptBeat(BaseModel):
     line: str
 
 
+class RoadmapStep(BaseModel):
+    """
+    One stop on the roadmap the video is built from.
+
+    `detail` is the part that earns the watch. "Learn prompt engineering" is
+    a category a viewer already knew to want; "few-shot prompting, and why
+    chain-of-thought stops helping once the model is small enough" is
+    something they can act on - and something the creator can look at and
+    tell whether it is right.
+    """
+
+    order: int
+    topic: str
+    detail: str
+
+
 class ScriptOutput(BaseModel):
     title: str
     language: str = "english"
     beats: list[ScriptBeat] = Field(min_length=2, max_length=6)
     estimated_duration_seconds: int
+    # Worked out before the beats and returned alongside them, in one call.
+    # Deliberately unconstrained: `beats` already carries min/max, and Gemini
+    # 400s on some combinations of array bounds (see StructuredKnowledge).
+    roadmap: list[RoadmapStep] = []
 
 
 class TanglishOutput(BaseModel):
     language: str = "tanglish"
+    script: str
+
+
+class TranslatedLines(BaseModel):
+    """
+    Short pieces of text restated in another language, one for one.
+
+    Deliberately just a list: hooks, their reasons, scene dialogue and scene
+    captions are all short standalone lines, and sending them together keeps
+    a language change to one call instead of one per line. The caller pairs
+    them back up by position, and checks the count before trusting it.
+    """
+
+    lines: list[str]
+
+
+class TranslatedScript(BaseModel):
+    """A whole script restated, with its labelled beats left alone."""
+
     script: str
 
 

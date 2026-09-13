@@ -93,7 +93,15 @@ class Settings(BaseSettings):
     # speaks it badly - audibly synthetic, and mispronounced because the
     # dialogue reaches it romanised. Sarvam says the line properly and the
     # pipeline puts it over Veo's picture.
-    speech_provider: Literal["dev", "sarvam"] = "dev"
+    #
+    # Unset means "use Sarvam if there is a key for it", the same way
+    # auth_mode resolves auth. It used to default to "dev", which meant a
+    # project with SARVAM_API_KEY configured and SPEECH_PROVIDER simply not
+    # written down voiced every scene with the dev placeholder - a silent
+    # WAV - and that silence replaced Veo's audio in the finished video. The
+    # export came out mute with nothing anywhere saying why. Set it
+    # explicitly to "dev" to force the placeholder even with a key present.
+    speech_provider: Literal["dev", "sarvam"] | None = None
     sarvam_api_key: str | None = None
     sarvam_tts_model: str = "bulbul:v3"
     # Lower case, and the API is strict about it.
@@ -155,6 +163,19 @@ class Settings(BaseSettings):
     @property
     def auth_mode(self) -> Literal["supabase", "dev"]:
         return "supabase" if self.supabase_jwt_secret else "dev"
+
+    @property
+    def speech_mode(self) -> Literal["sarvam", "dev"]:
+        """
+        Who actually speaks the line.
+
+        An explicit SPEECH_PROVIDER wins, so "dev" stays forceable. Left
+        unset, a configured Sarvam key is taken to mean the creator wants
+        Sarvam - nobody puts a paid TTS key in .env hoping for silence.
+        """
+        if self.speech_provider is not None:
+            return self.speech_provider
+        return "sarvam" if self.sarvam_api_key else "dev"
 
     def validate_for_startup(self) -> None:
         if self.environment == "production" and self.auth_mode == "dev":

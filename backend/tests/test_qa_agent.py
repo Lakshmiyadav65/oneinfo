@@ -59,3 +59,25 @@ def test_never_mutates_storyboard_content():
     original = storyboard.model_copy(deep=True)
     run_qa_agent(storyboard, estimated_duration_seconds=5)
     assert storyboard == original
+
+
+def test_a_blank_caption_is_not_a_defect():
+    """
+    It was reported as one, on three scenes at once, for a storyboard with
+    nothing wrong with it: the splitter blanked the caption on the
+    continuation of a split beat and QA called each one missing.
+
+    The check is gone rather than the blank, because nothing draws a caption
+    any more - rendering stopped burning them in, since they laid a second
+    line of text over video already carrying the spoken line, in the wrong
+    language. A field that cannot reach the finished video is not something
+    to stop a creator over.
+    """
+    storyboard = StoryboardOutput(
+        scenes=[_scene(order=1, caption=""), _scene(order=2, caption="   ")]
+    )
+
+    result = run_qa_agent(storyboard, estimated_duration_seconds=10)
+
+    assert result.passed is True
+    assert result.issues == []

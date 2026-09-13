@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Noto_Sans_Telugu } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -16,6 +16,28 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/**
+ * Telugu script, for posters.
+ *
+ * Geist is loaded with the latin subset and has no Telugu coverage, so Telugu
+ * text on a canvas would otherwise fall through to whatever the device
+ * happens to have - a different typeface on Windows, Android and iOS, and
+ * empty boxes on a stripped Android WebView. A poster is an image other
+ * people see, so "it looks different on every phone" is a real defect rather
+ * than a cosmetic one.
+ *
+ * `preload: false` because nobody should pay for this file until a Telugu
+ * glyph is actually drawn. Canvas never triggers a font load on its own, so
+ * the fetch happens exactly when ensurePosterFonts() asks for it by name.
+ */
+const notoTelugu = Noto_Sans_Telugu({
+  variable: "--font-telugu",
+  subsets: ["telugu", "latin"],
+  weight: ["400", "700"],
+  display: "swap",
+  preload: false,
+});
+
 export const metadata: Metadata = {
   title: "OneInfo AI Video Creator",
   description: "Turn an idea into a finished video with your AI creative team.",
@@ -25,7 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${notoTelugu.variable} h-full antialiased`}
     >
       {/*
         Browser extensions (Grammarly, password managers, and friends) attach

@@ -10,6 +10,11 @@ Deliberately absent: clip length. Flow offers it here, but a scene's length
 is decided per scene in the storyboard, where it can be weighed against what
 the scene actually has to say. A second copy on this panel would silently
 overwrite that.
+
+`target_duration_seconds` is not that setting and does not contradict it. It
+sets how long the whole video should run, which the storyboard spends across
+however many scenes it needs; each scene's own length is still derived from
+the line it has to say. One is a budget, the other is an override.
 """
 
 import enum
@@ -60,3 +65,12 @@ class OutputSettings(BaseModel):
     # that came out best instead of paying for a whole re-run. Multiplies the
     # cost of the run by exactly this number.
     takes: Literal[1, 2, 3, 4] = 1
+    # How long the finished video should run. Left unset, the script's own
+    # estimate decides, which is what happened before this existed.
+    #
+    # This is the setting that decides what a run costs, because video is
+    # billed by the second: halving the target roughly halves the bill. It
+    # is a target rather than a guarantee - the storyboard spends it in
+    # whole scenes, and Veo only makes those in fixed lengths - so the
+    # finished video lands near the number, not exactly on it.
+    target_duration_seconds: Literal[15, 30, 45, 60] | None = None

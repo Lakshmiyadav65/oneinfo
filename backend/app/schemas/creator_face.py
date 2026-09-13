@@ -42,6 +42,11 @@ class FaceSetupOut(BaseModel):
     consent_at: datetime | None
     appearance_description: str | None
     voice_description: str | None
+    # Which synthesised voice speaks this creator's videos, and the voices
+    # they can choose between. Null means the deployment's configured
+    # default, which is what every creator had before there was a choice.
+    speech_speaker: str | None
+    speech_speakers: list[str]
     # The capture the images were cut from, when there is one. Null means
     # they were uploaded, or the creator deleted the recording and kept the
     # frames.
@@ -60,3 +65,7 @@ class ReextractIn(BaseModel):
 class FaceDescriptionsIn(BaseModel):
     appearance_description: str | None = None
     voice_description: str | None = None
+    # Chosen from FaceSetupOut.speech_speakers. Validated against the
+    # provider rather than here, since which voices exist depends on which
+    # speech model the deployment runs.
+    speech_speaker: str | None = None

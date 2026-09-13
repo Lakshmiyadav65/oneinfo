@@ -1,13 +1,18 @@
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings
 from app.core.errors import NotFoundError
 from app.models.project import Project, ProjectStatus
 from app.schemas.export import ExportFormat
 from app.schemas.output_settings import OutputSettings, Resolution
 from app.services import environment_setup_service
+
+if TYPE_CHECKING:
+    from app.services.localization_service import Retranslation
 
 
 async def create_project(
@@ -84,21 +89,39 @@ async def get_owned_project(db: AsyncSession, creator_id: str, project_id: uuid.
 
 
 async def update_language(
-    db: AsyncSession, creator_id: str, project_id: uuid.UUID, language: str
-) -> Project:
+    db: AsyncSession,
+    settings: Settings,
+    creator_id: str,
+    project_id: uuid.UUID,
+    language: str,
+) -> tuple[Project, "Retranslation"]:
     """
-    Changes the language later steps generate in.
+    Changes the project's language, and brings the work already done with it.
 
-    Deliberately leaves existing hooks and scripts alone. They were written
-    in the old language and translating them here would silently rewrite
-    work the creator may have already approved — the new language applies
-    from the next generation onward.
+    It used to change this column and nothing else, which read as a bug even
+    though it was documented: five English hooks under a Tenglish badge, and
+    no way to fix them except a regeneration that discards the hook the
+    creator picked. Existing text is now restated rather than rewritten -
+    see localization_service, which keeps every id, selection and approval
+    where it was.
+
+    Picking the language already selected does nothing at all, so an
+    accidental click on the current language never costs a model call.
     """
+    from app.services import localization_service
+
     project = await get_owned_project(db, creator_id, project_id)
+    if project.language == language:
+        return project, localization_service.Retranslation(language=language)
+
     project.language = language
     await db.commit()
+
+    summary = await localization_service.retranslate_project(
+        db, settings, creator_id, project
+    )
     await db.refresh(project)
-    return project
+    return project, summary
 
 def project_output_settings(project: Project) -> OutputSettings:
     """

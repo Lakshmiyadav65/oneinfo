@@ -80,3 +80,41 @@ export function setSceneInclusion(
   );
 }
 
+
+/**
+ * How long this one clip runs. Null goes back to fitting the dialogue.
+ *
+ * Only 4, 6 and 8 second clips exist, and only 8 while the creator is on
+ * camera. The server refuses anything else rather than letting Veo reject
+ * it mid-run, by which point earlier scenes have already been billed.
+ */
+export function setSceneDuration(
+  projectId: string,
+  sceneId: string,
+  durationSeconds: number | null
+): Promise<Storyboard> {
+  return api.patch<Storyboard>(
+    `/projects/${projectId}/storyboard/scenes/${sceneId}/duration`,
+    { duration_seconds: durationSeconds }
+  );
+}
+
+
+/**
+ * Rewrites what one scene says.
+ *
+ * The clip length and the prompt both follow the new words on the server,
+ * so this is the only thing sent. Saving does not regenerate anything: the
+ * clips already made are kept, marked as older than the line, and it is the
+ * creator who decides which of them to replace.
+ */
+export function setSceneDialogue(
+  projectId: string,
+  sceneId: string,
+  voiceover: string
+): Promise<Storyboard> {
+  return api.patch<Storyboard>(
+    `/projects/${projectId}/storyboard/scenes/${sceneId}/dialogue`,
+    { voiceover }
+  );
+}

@@ -6,6 +6,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import {
   deleteFaceImage,
   getFaceSetup,
+  previewVoice,
   revokeFaceConsent,
   updateFaceDescriptions,
   uploadFaceImage,
@@ -46,12 +47,43 @@ export function FaceSetupCard() {
   const [setup, setSetup] = useState<FaceSetup | null>(null);
   const [appearance, setAppearance] = useState<string | null>(null);
   const [voice, setVoice] = useState<string | null>(null);
+  const [speaker, setSpeaker] = useState<string | null>(null);
+  const [listening, setListening] = useState<string | null>(null);
+  // Held outside state so a second preview can stop the first, and so the
+  // object URL can be revoked without waiting for a render.
+  const playing = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
 
   const data = setup ?? (query.status === "success" ? query.data : null);
 
   // Local edits win until saved, so typing isn't clobbered by a refetch.
   const appearanceValue = appearance ?? data?.appearance_description ?? "";
   const voiceValue = voice ?? data?.voice_description ?? "";
+  const speakerValue = speaker ?? data?.speech_speaker ?? "";
+
+  async function hear(name: string) {
+    if (!name) return;
+    playing.current?.audio.pause();
+    if (playing.current) URL.revokeObjectURL(playing.current.url);
+    playing.current = null;
+    setListening(name);
+    try {
+      // English, because the sample is being judged as a voice rather than
+      // as a reading of any particular project's script.
+      const blob = await previewVoice(name, "english");
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      playing.current = { audio, url };
+      audio.onended = () => setListening(null);
+      await audio.play();
+    } catch (err) {
+      setListening(null);
+      toast({
+        variant: "destructive",
+        title: "Couldn't play that voice",
+        description: errorDescription(err),
+      });
+    }
+  }
 
   async function run(action: () => Promise<FaceSetup | void>, failure: string) {
     setBusy(true);
@@ -226,10 +258,69 @@ export function FaceSetupCard() {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            These are repeated word for word into every scene you appear in. The video
+            Repeated word for word into the prompt: how you look, into the scenes you
+            appear in; how you sound, into every scene, b-roll included. The video
             model has no memory between scenes, so identical wording is what keeps you
             looking and sounding the same from one cut to the next.
           </p>
+          {/*
+            Said here because the field being empty has a visible, confusing
+            result rather than a neutral one. Told nothing about the
+            narrator, the model casts one per clip - a woman reading one
+            scene and a man the next, inside one video.
+          */}
+          {!voiceValue.trim() && (
+            <p className="text-xs text-muted-foreground">
+              With this empty, the model picks a narrator for each clip on its own,
+              and they will not match. Describing your voice once is what stops that.
+            </p>
+          )}
+
+          {/*
+            The description above asks the video model for a voice, which it
+            can decline - it generates every clip with no memory of the last.
+            This one is a guarantee: the same speaker reads every scene,
+            because the words are synthesised rather than invented.
+
+            Named, not labelled. Which of these is right is a judgement about
+            a voice, so the honest way to present them is to let one be
+            heard rather than to write "warm female" beside a name.
+          */}
+          <div className="space-y-1.5 border-t border-border pt-4">
+            <Label htmlFor="face-speaker">The voice that reads your scenes</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                id="face-speaker"
+                className="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground"
+                value={speakerValue}
+                disabled={busy || (data?.speech_speakers.length ?? 0) === 0}
+                onChange={(event) => setSpeaker(event.target.value)}
+              >
+                <option value="">The default voice</option>
+                {(data?.speech_speakers ?? []).map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!speakerValue || listening !== null}
+                isLoading={listening !== null}
+                onClick={() => void hear(speakerValue)}
+              >
+                Hear it
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Used by{" "}
+              <span className="text-foreground">Use one voice for every scene</span>{" "}
+              on the storyboard step, which replaces what the video model said
+              with this voice. Free, and the only way a whole video is
+              guaranteed to sound like one person.
+            </p>
+          </div>
           <Button
             variant="secondary"
             size="sm"
@@ -240,15 +331,17 @@ export function FaceSetupCard() {
                   updateFaceDescriptions({
                     appearance_description: appearanceValue,
                     voice_description: voiceValue,
+                    speech_speaker: speakerValue,
                   }),
                 "Couldn't save descriptions"
               ).then(() => {
                 setAppearance(null);
                 setVoice(null);
+                setSpeaker(null);
               })
             }
           >
-            Save descriptions
+            Save voice and appearance
           </Button>
         </div>
       </CardContent>

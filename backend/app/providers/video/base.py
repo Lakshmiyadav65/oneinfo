@@ -58,3 +58,39 @@ def snap_duration(value: int, allowed: tuple[int, ...] | None) -> int:
     if not allowed:
         return value
     return min(allowed, key=lambda option: (abs(option - value), -option))
+
+
+# The line is an estimate, so leave it somewhere to be wrong. Under-running
+# costs a beat of quiet; over-running cuts the last words off.
+SPEECH_HEADROOM = 1.15
+
+
+def fit_duration(
+    spoken_seconds: float, allowed: tuple[int, ...] | None, *, fallback: int
+) -> int:
+    """
+    The shortest supported clip the line actually fits in.
+
+    Chosen from the words rather than from the model's guess at a duration,
+    because the model has no idea how long its own sentence takes to say.
+    Asked for a nine-word hook it would ask for eight seconds, and Veo,
+    given eight seconds and nine words, stretches them across the whole clip
+    - a measured 1.2 words a second, half of conversational pace, which is
+    what "the avatar goes quiet in the middle" actually sounds like.
+
+    Shortest rather than nearest, and it matters twice. A clip is billed by
+    the second, so four seconds of speech should not buy eight seconds of
+    video. And `snap_duration` rounds to the *nearest* length, which rounds
+    a twelve-second line down to eight and cuts its last words off; this
+    never returns less than the line needs when a longer option exists.
+    """
+    # No line to measure - a silent establishing shot, or a scene the
+    # creator emptied. There is nothing to derive a length from, so the
+    # caller's own figure stands.
+    if not allowed or spoken_seconds <= 0:
+        return fallback
+    needed = spoken_seconds * SPEECH_HEADROOM
+    return next(
+        (option for option in sorted(allowed) if option >= needed),
+        max(allowed),
+    )

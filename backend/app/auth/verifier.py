@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from typing import ClassVar, Protocol
 
@@ -44,16 +45,32 @@ class SupabaseJWTVerifier:
         return AuthenticatedIdentity(auth_id=auth_id, email=payload.get("email"), name=name)
 
 
+# A dev creator id has to be usable as a primary key and as a path segment
+# in a storage key, and nothing else is asked of it.
+_DEV_ID = re.compile(r"^[A-Za-z0-9._@+-]{1,255}$")
+
+
 class DevAuthVerifier:
     """
     Development-only verifier for use before Supabase is configured. Accepts
-    tokens of the form "dev:<creator-a|creator-b>", mirroring the frontend's
-    dev-mock auth from Phase 01 so creator ids line up if the two are ever
-    connected during local development. Never selected when
-    SUPABASE_JWT_SECRET is set (see Settings.auth_mode).
+    tokens of the form "dev:<id>", mirroring the frontend's dev-mock auth so
+    creator ids line up during local development. Never selected when
+    SUPABASE_JWT_SECRET is set (see Settings.auth_mode), and the app refuses
+    to start in production without that secret.
+
+    Any well-formed id is accepted, not a fixed list of two. Everything
+    behind this point is already per-creator - every table carries a
+    creator_id that cascades from `creators`, and the creator row itself is
+    created on first sight - so the two-entry dictionary that used to live
+    here was the only reason a third creator could not exist. That made the
+    whole app look single-tenant when only its front door was.
+
+    This grants nothing that was not already granted: the dev sign-in accepts
+    any password for the accounts it knows, so the door has never been
+    locked. It is kept shut by not being selected outside development.
     """
 
-    _DEV_CREATORS: ClassVar[dict[str, AuthenticatedIdentity]] = {
+    _NAMED: ClassVar[dict[str, AuthenticatedIdentity]] = {
         "creator-a": AuthenticatedIdentity(
             auth_id="creator-a", email="creator-a@oneinfo.dev", name="Demo Creator A"
         ),
@@ -67,11 +84,23 @@ class DevAuthVerifier:
         if not token.startswith(prefix):
             raise UnauthorizedError("Invalid or expired session.")
 
-        creator_id = token[len(prefix) :]
-        identity = self._DEV_CREATORS.get(creator_id)
-        if identity is None:
+        creator_id = token[len(prefix) :].strip()
+        if not _DEV_ID.match(creator_id):
             raise UnauthorizedError("Invalid or expired session.")
-        return identity
+
+        named = self._NAMED.get(creator_id)
+        if named is not None:
+            return named
+
+        # The frontend uses the address someone signed in with as the id, so
+        # it is both the identity and the readable name. A id that is not an
+        # address still gets a creator, named after itself.
+        is_email = "@" in creator_id
+        return AuthenticatedIdentity(
+            auth_id=creator_id,
+            email=creator_id if is_email else None,
+            name=creator_id.split("@")[0] if is_email else creator_id,
+        )
 
 
 def get_verifier(settings: Settings) -> AuthVerifier:

@@ -14,6 +14,11 @@ from app.core.errors import NotFoundError, ValidationAppError
 from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.creator_face import MAX_FACE_IMAGES, CreatorFaceImage
+from app.providers.speech import (
+    SARVAM_SPEAKERS,
+    get_speech_provider,
+    language_code_for,
+)
 from app.providers.storage import get_storage_provider
 from app.schemas.creator_face import (
     CreatorFaceImageOut,
@@ -29,6 +34,16 @@ router = APIRouter(prefix="/creators/me/face", tags=["creator face"])
 _CHUNK_BYTES = 1024 * 1024
 
 
+# What a voice says when it introduces itself. One sentence in each
+# language the projects are written in, because a Telugu creator judging an
+# English sample is judging the wrong thing.
+_PREVIEW_LINE = {
+    "english": "Hi, this is how your video will sound with this voice.",
+    "tenglish": "Hi, mee video ee voice tho ila vinipisthundi.",
+    "telugu": "హాయ్, మీ వీడియో ఈ వాయిస్‌తో ఇలా వినిపిస్తుంది.",
+}
+
+
 async def _setup(db: AsyncSession, creator: Creator) -> FaceSetupOut:
     images = await creator_face_service.list_faces(db, creator.id)
     recording = await creator_recording_service.get_recording(db, creator.id)
@@ -39,6 +54,8 @@ async def _setup(db: AsyncSession, creator: Creator) -> FaceSetupOut:
         consent_at=creator.face_consent_at,
         appearance_description=creator.appearance_description,
         voice_description=creator.voice_description,
+        speech_speaker=creator.speech_speaker,
+        speech_speakers=list(SARVAM_SPEAKERS),
         recording=CreatorRecordingOut.model_validate(recording) if recording else None,
         ready_for_generation=bool(images) and creator.face_consent_at is not None,
     )
@@ -120,9 +137,46 @@ async def update_descriptions(
         creator.appearance_description = payload.appearance_description.strip() or None
     if payload.voice_description is not None:
         creator.voice_description = payload.voice_description.strip() or None
+    if payload.speech_speaker is not None:
+        chosen = payload.speech_speaker.strip().lower()
+        # Refused here rather than at synthesis. A speaker the model does
+        # not have comes back from Sarvam as a 400 in the middle of voicing
+        # a scene, by which point the creator has already pressed a button
+        # and waited.
+        if chosen and chosen not in SARVAM_SPEAKERS:
+            raise ValidationAppError(f"There is no voice called {chosen}.")
+        creator.speech_speaker = chosen or None
     await db.commit()
     await db.refresh(creator)
     return await _setup(db, creator)
+
+
+@router.get("/voices/{speaker}/preview")
+async def preview_voice(
+    speaker: str,
+    language: str = "english",
+    creator: Creator = Depends(get_current_creator),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """
+    A short line spoken by one of the voices, as WAV.
+
+    Which voice sounds right is a judgement about a voice, and the only
+    honest way to make it is to hear one - so the choice ships with this
+    rather than with adjectives beside each name. It costs a couple of
+    seconds of speech and touches the video provider not at all.
+    """
+    chosen = speaker.strip().lower()
+    if chosen not in SARVAM_SPEAKERS:
+        raise NotFoundError(f"There is no voice called {chosen}.")
+
+    provider = get_speech_provider(settings, chosen)
+    audio = await provider.synthesize(
+        _PREVIEW_LINE.get(language, _PREVIEW_LINE["english"]),
+        language_code=language_code_for(language),
+        pace=1.0,
+    )
+    return Response(content=audio, media_type="audio/wav")
 
 
 def _take_mime(raw: str | None) -> str:

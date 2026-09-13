@@ -71,3 +71,29 @@ class IdeaSuggestionsOut(BaseModel):
 
 class IdeaSuggestionsIn(BaseModel):
     language: Literal["english", "tenglish", "telugu"] = "english"
+
+
+class RetranslationOut(BaseModel):
+    """
+    What a language change actually rewrote.
+
+    Returned so the creator is told rather than left to scroll and check.
+    Counts rather than content: the rewritten text arrives with the next
+    read of each step, and repeating it here would mean two copies of the
+    same hooks on the wire.
+    """
+
+    hooks: int = 0
+    script: bool = False
+    scenes: int = 0
+    # Scene numbers whose clips were generated in the old language. Left
+    # alone deliberately - they were paid for - and named so the creator can
+    # decide which, if any, to generate again.
+    scenes_with_clips: list[int] = []
+
+
+class LanguageChangeOut(BaseModel):
+    """The project as it now stands, and what moved with it."""
+
+    project: ProjectOut
+    retranslated: RetranslationOut

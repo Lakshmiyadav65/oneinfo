@@ -23,6 +23,8 @@ NEGATIVE PROMPT. Two things in it matter more than the rest:
     captions into the frame, and burnt-in text cannot be removed later.
 """
 
+import re
+
 from app.schemas.environment import (
     PRESETS,
     Background,
@@ -37,7 +39,9 @@ from app.schemas.environment import (
 )
 
 _BACKGROUND = {
-    Background.clean_studio: "a clean studio background",
+    # "Uncluttered", not "blank". A genuinely empty wall gives the lens
+    # nothing to defocus, and the shot comes back looking pasted together.
+    Background.clean_studio: "an uncluttered studio background with real depth behind it",
     Background.modern_office: "a modern office background",
     Background.home_interior: "a home interior background",
     Background.outdoor: "an outdoor background",
@@ -69,6 +73,66 @@ _MOVEMENT = {
     CameraMovement.pan: "The camera pans slowly",
     CameraMovement.tracking: "The camera tracks the subject",
 }
+
+# The lens, chosen from the framing rather than asked for separately.
+#
+# A shot description with no optics in it is the largest single tell that
+# footage was rendered: real cameras have a focal length and an aperture, and
+# those decide how much of the room is sharp behind the subject. Without
+# them Veo tends to hold everything in focus at once, which no camera does
+# and which the eye reads as a game engine.
+_LENS = {
+    CameraFraming.wide: (
+        "Shot on a 24mm lens at f/4, deep focus, the room readable behind the subject"
+    ),
+    CameraFraming.medium: (
+        "Shot on a 35mm lens at f/2.8, the background falling gently out of focus"
+    ),
+    CameraFraming.medium_close_up: (
+        "Shot on a 50mm lens at f/2, shallow depth of field, the background soft"
+    ),
+    CameraFraming.close_up: (
+        "Shot on an 85mm lens at f/1.8, very shallow depth of field, only the eyes "
+        "critically sharp"
+    ),
+    CameraFraming.over_the_shoulder: (
+        "Shot on a 50mm lens at f/2, the foreground shoulder soft and out of focus"
+    ),
+    CameraFraming.full_body: (
+        "Shot on a 35mm lens at f/4, the whole figure held in focus"
+    ),
+}
+
+# Said on every scene, whatever the style or the set.
+#
+# None of the style options ask for a drawing - they ask for footage, and
+# differ in how it is graded. What separated the output from footage was
+# never the grade: it was skin with no pores, cloth with no weave, light
+# that arrived from everywhere at once, and a backdrop with nothing behind
+# it. Each line here names one of those.
+_REALISM = (
+    "Real camera footage, not a render. Recorded on a full-frame mirrorless "
+    "camera at 24fps with natural motion blur and fine sensor grain in the "
+    "shadows. Natural skin with visible pores, fine lines, stray hairs and "
+    "small asymmetries - a real face, not a corrected one. Real fabric with "
+    "visible weave, creases where it folds and a little wear. Surfaces carry "
+    "dust, fingerprints and small marks. Light comes from one dominant "
+    "source with soft physically plausible falloff and shadows that agree "
+    "with it, and the colour temperature varies slightly across the frame "
+    "rather than sitting flat."
+)
+
+# The background, as a place rather than a colour.
+#
+# "A clean studio background" is a wall. A room that is genuinely empty
+# behind the subject has nothing for a lens to defocus, so the shot comes
+# back looking pasted together - which is the specific complaint this
+# answers.
+_BACKGROUND_DEPTH = (
+    "The background is a real place with depth: several planes of actual "
+    "objects receding behind the subject, softly out of focus, lit by the "
+    "same light as the subject - never a flat backdrop."
+)
 
 _LIGHTING = {
     Lighting.natural: "natural lighting",
@@ -134,8 +198,49 @@ _NEGATIVE_PROMPT = (
     "keep all background text blurred. No visible brand logos or branding. "
     "No background music. No dubbing. No AI-generated look. "
     "No exaggerated theatrical acting. No fake reactions. No skin smoothing. "
-    "No jump cuts. No slow motion. No dramatic zooms. No oversaturated colors."
+    "No jump cuts. No slow motion. No dramatic zooms. No oversaturated colors. "
+    # The render tells, named one at a time. "No AI-generated look" above is
+    # a category; these are the specific artefacts a viewer actually notices,
+    # and a model given the specifics avoids more of them than one given the
+    # category.
+    "No plastic or waxy skin. No airbrushed faces. No perfectly symmetrical "
+    "features. No dead or glassy eyes. No warped, extra or merged fingers. "
+    "No floating or intersecting objects. No flat empty backdrop. No uniform "
+    "shadowless lighting. No 3D render, no CGI, no video-game look."
 )
+
+# Added to a scene the creator is not in.
+#
+# Nothing used to say this, and the silence was the bug. A b-roll scene's
+# prompt described a studio, gave it a line to say, and never mentioned who
+# was in frame - so Veo invented someone, and the creator's video cut from
+# them to a stranger presenting their script. It reads as a different
+# creator, which is worse than an empty shot in every way that matters.
+_NO_PEOPLE = (
+    "No people on camera. No face. No presenter, host or narrator in frame. "
+    "No person speaking to camera."
+)
+
+# Added to a scene the creator IS in, for the other half of the same
+# problem: a second invented person standing next to them.
+_NO_OTHER_PEOPLE = "No other people in the shot besides the person described."
+
+
+def _negative_prompt(*, features_creator: bool, subject: Subject) -> str:
+    """
+    The negatives for this scene, not for scenes in general.
+
+    Whether a person belongs in the shot is the one entry that cannot be
+    written once for everything: it is the difference between the creator's
+    own piece to camera, a deliberate shot of people, and a cutaway that
+    should have nobody in it at all.
+    """
+    if subject is Subject.people:
+        # People are what the creator asked to see. Saying "no people" here
+        # would contradict the SCENE line directly above it.
+        return _NEGATIVE_PROMPT
+    tail = _NO_OTHER_PEOPLE if features_creator else _NO_PEOPLE
+    return f"{_NEGATIVE_PROMPT} {tail}"
 
 
 def aspect_ratio_label(width: int, height: int) -> str:
@@ -185,10 +290,30 @@ def compose_visual_prompt(
         header.append(f"Aspect Ratio: {aspect_ratio}")
     header.append(f"Style: {_STYLE[environment.visual_style]}")
 
-    audio = "Native recorded audio. No music, no dubbing."
-    if features_creator and voice_description:
-        audio = f"{audio} {voice_description.strip().rstrip('.')}."
-    header.append(f"Audio: {audio}")
+    # The voice belongs to the whole video, not to the scenes the creator is
+    # visible in.
+    #
+    # It used to be named only on on-camera scenes, so every b-roll clip was
+    # cast from nothing - and Veo, asked for narration and told nothing
+    # about the narrator, picked a different one each time. One video came
+    # back with a woman reading one clip and a man reading the next. Being
+    # off screen changes the picture; it does not change who is speaking.
+    audio = ["Native recorded audio. No music, no dubbing."]
+    if voice_description:
+        audio.append(f"{voice_description.strip().rstrip('.')}.")
+    if not features_creator:
+        # Nobody is in frame here and the negatives say so, and a line still
+        # has to come from somewhere. Saying where stops the model resolving
+        # that by putting a speaker back in the shot.
+        audio.append("The line is delivered as an off-screen voiceover.")
+    # Said on every scene, and said even when no description is on file: it
+    # is the only thing holding one narrator across clips the model
+    # generates separately and with no memory of each other.
+    audio.append(
+        "One narrator for the whole video - the same voice, accent, age and "
+        "gender in every clip."
+    )
+    header.append("Audio: " + " ".join(audio))
 
     spoken = _SPOKEN_LANGUAGE.get(language, _SPOKEN_LANGUAGE["english"])
     header.append(f"Spoken language: {spoken} {_DIALOGUE_RULE}")
@@ -204,13 +329,57 @@ def compose_visual_prompt(
         if characteristics:
             scene.append(f"Filmed in {characteristics}")
 
+    # Who is in the shot, said outright in every case.
+    #
+    # It used to be said only when the creator was in it and had an
+    # appearance on file. Every other scene left it out, and an unanswered
+    # question is not an empty answer: given a studio, a line to say and
+    # nobody named, Veo puts a presenter of its own invention in the frame.
+    # The creator's video then cuts from them to a stranger saying their
+    # script.
+    #
     # The creator's appearance is repeated word for word on every on-camera
     # scene. Veo has no memory between clips, so identical wording is the
     # only thing holding one face steady across a video.
-    if features_creator and appearance_description:
-        scene.append(f"{appearance_description.strip().rstrip('.')}, speaking directly to camera")
+    if features_creator:
+        if appearance_description:
+            scene.append(
+                f"{appearance_description.strip().rstrip('.')}, speaking directly to camera"
+            )
+        else:
+            scene.append("The presenter speaks directly to camera")
+    elif environment.subject is Subject.people:
+        scene.append(_SUBJECT[Subject.people])
     elif environment.subject in _SUBJECT:
-        scene.append(_SUBJECT[environment.subject])
+        scene.append(f"{_SUBJECT[environment.subject]}, with nobody on camera")
+    else:
+        # Subject.creator on a scene the creator is not in - the default
+        # setup, on the scenes that are b-roll precisely because the
+        # creator left the box unticked.
+        scene.append(
+            "A b-roll cutaway with nobody on camera, showing what the line "
+            "describes rather than a person saying it"
+        )
+
+    # Said last, so it is the final word on a question the rest of the
+    # prompt keeps reopening.
+    #
+    # Two things above this outrank a negative. The set can imply a person -
+    # "a modern creator studio with a desk setup" is a room built for
+    # someone to sit in - and the ACTION can name one outright: storyboards
+    # written before the agent was told otherwise say things like "someone
+    # sketching on a whiteboard". Both are positive instructions, and a
+    # positive instruction beats an entry on a list of things to avoid. So
+    # the conflict is resolved here in words rather than left to the model.
+    if not features_creator and environment.subject is not Subject.people:
+        scene.append(
+            "Nobody appears in this shot at all - no presenter, no bystander, "
+            "no hands, no reflection of a person. Where the set or the action "
+            "below implies someone, show only what they would be working on: "
+            "the screen, the whiteboard already drawn on, the desk, the "
+            "object, the place. An empty frame of the right thing is correct "
+            "here; a person is not"
+        )
 
     # Continuity, for the same reason and by the same means: the clips are
     # generated separately and have to look like one recording.
@@ -233,9 +402,14 @@ def compose_visual_prompt(
     if environment.additional_requirements.strip():
         ambience.append(environment.additional_requirements.strip().rstrip("."))
 
+    # The lens travels with the framing. Asking for "a close-up" describes
+    # what is in the frame; adding the glass describes what a camera does
+    # with it, which is the part that decides whether the shot looks
+    # photographed or assembled.
     camera = (
         f"Shot as {_FRAMING[environment.camera_framing]} "
         f"{_ANGLE[environment.camera_angle]}. "
+        f"{_LENS[environment.camera_framing]}. "
         f"{_MOVEMENT[environment.camera_movement]}."
     )
 
@@ -254,8 +428,67 @@ def compose_visual_prompt(
         ("CAMERA", camera),
         ("LIGHTING", _LIGHTING[environment.lighting].capitalize() + "."),
         ("ENVIRONMENT", ". ".join(ambience) + "." if ambience else ""),
-        ("NEGATIVE PROMPT", _NEGATIVE_PROMPT),
+        # Its own block rather than another clause on the style header. It
+        # is the longest instruction in the prompt and the one carrying the
+        # difference between footage and a render, and a labelled block is
+        # read as an instruction where a trailing clause is read as flavour.
+        ("REALISM", f"{_REALISM} {_BACKGROUND_DEPTH}"),
+        (
+            "NEGATIVE PROMPT",
+            _negative_prompt(
+                features_creator=features_creator, subject=environment.subject
+            ),
+        ),
     ]
 
     body = "\n\n".join(f"{label}:\n{text}" for label, text in sections if text)
     return "\n".join(header) + "\n\n" + body
+
+
+# The DIALOGUE block, from its label to the next labelled section. Written
+# against the shape compose_visual_prompt builds above, which is the only
+# thing that writes these prompts.
+_DIALOGUE_SECTION = re.compile(
+    r"^DIALOGUE:\n.*?(?=\n\n[A-Z][A-Z ]*:\n|\Z)", re.MULTILINE | re.DOTALL
+)
+
+
+def replace_dialogue(prompt: str, dialogue: str) -> str | None:
+    """
+    Swaps the spoken line inside an already-written prompt, leaving the rest
+    of it untouched. None when the prompt has no DIALOGUE block to swap.
+
+    For the one case a full rebuild cannot serve: the creator has written
+    this scene's prompt by hand, and has now changed what is said in it.
+    Rebuilding would throw their wording away; leaving the prompt alone
+    would generate a clip speaking the words they just deleted. Neither is
+    what they asked for, and the second one is billed.
+    """
+    line = dialogue.strip()
+    replacement = f'DIALOGUE:\n"{line}"' if line else ""
+    if not _DIALOGUE_SECTION.search(prompt):
+        return None
+    return _DIALOGUE_SECTION.sub(lambda _: replacement, prompt, count=1)
+
+
+# The Spoken language header line, which is its own line in the header block.
+_SPOKEN_HEADER = re.compile(r"^Spoken language: .*$", re.MULTILINE)
+
+
+def replace_spoken_language(prompt: str, language: str) -> str | None:
+    """
+    Retargets the language an already-written prompt speaks in. None when
+    the prompt has no Spoken language header to retarget.
+
+    The companion to replace_dialogue, and needed for the same reason: a
+    creator who wrote this prompt by hand and has now changed the project's
+    language would otherwise get a clip whose dialogue is Telugu and whose
+    instructions still say English. Veo resolves that disagreement by
+    speaking English, which is the bug this exists to prevent.
+    """
+    if not _SPOKEN_HEADER.search(prompt):
+        return None
+    spoken = _SPOKEN_LANGUAGE.get(language, _SPOKEN_LANGUAGE["english"])
+    return _SPOKEN_HEADER.sub(
+        lambda _: f"Spoken language: {spoken} {_DIALOGUE_RULE}", prompt, count=1
+    )

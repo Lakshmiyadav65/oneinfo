@@ -153,3 +153,28 @@ export type SceneVoice = {
 export function voiceScene(projectId: string, sceneId: string): Promise<SceneVoice> {
   return api.post<SceneVoice>(`/projects/${projectId}/scenes/${sceneId}/voice`, {});
 }
+
+/**
+ * What a whole-video voice pass did, as scene numbers.
+ *
+ * `skipped` are scenes with no clip yet, `overrunning` are scenes whose
+ * line is longer than the clip it has to fit in — the one problem no amount
+ * of speeding up solves.
+ */
+export type ProjectVoice = {
+  voiced: number[];
+  skipped: number[];
+  overrunning: number[];
+};
+
+/**
+ * Says every scene's line in one voice, over the clips already generated.
+ *
+ * The guarantee the prompt cannot give: Veo generates each clip with no
+ * memory of the last, so a prompt naming a voice is a request it can
+ * decline. Speech here comes from one configured speaker, so the whole
+ * video matches by construction. Free — no video is generated.
+ */
+export function voiceProject(projectId: string): Promise<ProjectVoice> {
+  return api.post<ProjectVoice>(`/projects/${projectId}/voice`, {});
+}

@@ -9,6 +9,8 @@ const EMPTY: FaceSetup = {
   consent_at: null,
   appearance_description: null,
   voice_description: null,
+  speech_speaker: null,
+  speech_speakers: [],
   recording: null,
   ready_for_generation: false,
 };
@@ -43,8 +45,20 @@ export async function revokeFaceConsent(): Promise<FaceSetup> {
 export async function updateFaceDescriptions(payload: {
   appearance_description?: string | null;
   voice_description?: string | null;
+  speech_speaker?: string | null;
 }): Promise<FaceSetup> {
   return api.patch<FaceSetup>("/creators/me/face/descriptions", payload);
+}
+
+/**
+ * A short line spoken by one of the voices, for listening to before
+ * choosing. Which voice is right is a judgement about a voice, and the only
+ * honest way to make it is to hear one.
+ */
+export function previewVoice(speaker: string, language: string): Promise<Blob> {
+  return api.getBlob(
+    `/creators/me/face/voices/${speaker}/preview?language=${language}`
+  );
 }
 
 /**

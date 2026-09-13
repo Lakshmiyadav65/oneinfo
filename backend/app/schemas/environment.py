@@ -119,7 +119,8 @@ class SceneEnvironment(BaseModel):
 PRESETS: dict[EnvironmentPreset, dict] = {
     EnvironmentPreset.youtube_studio: {
         "characteristics": (
-            "a modern creator studio with a clean background and a desk setup, "
+            "a modern creator studio with an uncluttered but real background "
+            "and a desk setup, "
             "professional key lighting with soft fill and subtle background light, "
             "clean composition and professional YouTube production quality"
         ),

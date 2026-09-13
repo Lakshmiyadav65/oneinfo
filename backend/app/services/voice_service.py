@@ -23,8 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationAppError
 from app.models.asset import Asset, AssetType
+from app.models.creator import Creator
 from app.models.storyboard import StoryboardScene
-from app.providers.ffmpeg_runner import probe_duration_seconds, run_ffmpeg
+from app.providers.ffmpeg_runner import (
+    peak_level_db,
+    probe_duration_seconds,
+    run_ffmpeg,
+)
 from app.providers.speech import (
     SpeechProvider,
     get_speech_provider,
@@ -32,7 +37,7 @@ from app.providers.speech import (
     pace_to_fit,
 )
 from app.providers.storage import get_storage_provider
-from app.services import generation_service, project_service
+from app.services import generation_service, project_service, storyboard_service
 
 
 @dataclass
@@ -52,6 +57,12 @@ class VoicedClip:
         return max(0.0, self.spoken_seconds - self.clip_seconds)
 
 
+# Anything quieter than this across a whole take is not a quiet reading, it
+# is an empty track. Digital silence measures about -91 dBFS; real speech,
+# even softly spoken and before any normalisation, peaks far above -60.
+SILENCE_CEILING_DBFS = -60.0
+
+
 async def _say(
     settings: Settings,
     provider: SpeechProvider,
@@ -64,6 +75,20 @@ async def _say(
     path = Path(tempfile.gettempdir()) / f"oneinfo-voice-{uuid.uuid4()}.wav"
     path.write_bytes(audio)
     scratch.append(path)
+
+    # Checked here rather than after muxing, because by then Veo's audio is
+    # already gone. A silent track that reaches the mux does not fail
+    # anything: it produces a valid, correctly sized, completely mute clip,
+    # which is then preferred over the raw one when the video is stitched.
+    # Whole exports went out silent this way, and nothing in the app said so.
+    if await peak_level_db(settings.ffmpeg_path, str(path)) < SILENCE_CEILING_DBFS:
+        raise ValidationAppError(
+            "The voice service returned silence, so the scene was left with "
+            "Veo's own audio rather than being muted. This is what a "
+            "placeholder voice sounds like: set SPEECH_PROVIDER=sarvam (with "
+            "SARVAM_API_KEY) to have the line actually spoken."
+        )
+
     return path, await probe_duration_seconds(settings.ffprobe_path, str(path))
 
 
@@ -149,6 +174,10 @@ async def voice_scene(
     again to find out how it sounds.
     """
     project = await project_service.get_owned_project(db, creator_id, project_id)
+    # The creator's chosen voice, not the deployment's. One voice across a
+    # video is the whole point of this path, and it can only be one voice if
+    # every scene is spoken by the speaker they picked.
+    creator = await db.get(Creator, creator_id)
 
     scene = await db.get(StoryboardScene, scene_id)
     if scene is None or scene.creator_id != creator_id:
@@ -172,7 +201,7 @@ async def voice_scene(
 
         result = await voice_over_clip(
             settings,
-            get_speech_provider(settings),
+            get_speech_provider(settings, creator.speech_speaker if creator else None),
             dialogue=scene.voiceover,
             language_code=language_code_for(project.language),
             clip_path=clip_path,
@@ -217,3 +246,56 @@ async def voice_scene(
     finally:
         for path in scratch:
             path.unlink(missing_ok=True)
+
+
+@dataclass
+class VoicedProject:
+    """What a whole-video voicing pass did, scene by scene."""
+
+    voiced: list[int]
+    # Scenes with no clip yet. Skipped rather than refused: voicing replaces
+    # the audio on a picture that already exists, and half a storyboard
+    # generated is the normal state of a project mid-way through.
+    skipped: list[int]
+    # Scenes whose line runs past the clip it has to fit in. Reported rather
+    # than silently accepted - the words themselves have to come down, and
+    # only the creator can decide which ones go.
+    overrunning: list[int]
+
+
+async def voice_every_scene(
+    db: AsyncSession,
+    settings: Settings,
+    creator_id: str,
+    project_id: uuid.UUID,
+) -> VoicedProject:
+    """
+    Says every scene's line in one voice, over the clips already generated.
+
+    The guarantee the prompt cannot give. A prompt can name a voice and ask
+    Veo to keep it, and Veo generates each clip with no memory of the last -
+    which is how one video came back with a woman reading one scene and a
+    man reading the next. Speech is synthesised by one configured speaker,
+    so every scene put through this comes out in the same voice by
+    construction rather than by instruction.
+
+    Costs nothing at the video provider. The pictures are already paid for;
+    this replaces what is said over them.
+    """
+    await project_service.get_owned_project(db, creator_id, project_id)
+    storyboard = await storyboard_service.get_storyboard(db, creator_id, project_id)
+
+    summary = VoicedProject(voiced=[], skipped=[], overrunning=[])
+    for scene in sorted(storyboard.scenes, key=lambda s: s.order):
+        if not scene.included_in_video or not scene.voiceover.strip():
+            continue
+        try:
+            result = await voice_scene(db, settings, creator_id, project_id, scene.id)
+        except NotFoundError:
+            # No clip for this scene yet. Nothing to speak over.
+            summary.skipped.append(scene.order)
+            continue
+        summary.voiced.append(scene.order)
+        if result.overruns:
+            summary.overrunning.append(scene.order)
+    return summary

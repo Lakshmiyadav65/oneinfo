@@ -13,6 +13,7 @@ from app.providers.storage import get_storage_provider
 from app.schemas.export import ExportRequest
 from app.schemas.generation import (
     GenerationJobOut,
+    ProjectVoiceOut,
     SceneTakeOut,
     SceneTakesOut,
     SceneVoiceOut,
@@ -238,6 +239,34 @@ async def select_scene_take(
     return SceneTakesOut(
         takes=[SceneTakeOut.model_validate(asset) for asset in takes],
         selected_take=scene.selected_take,
+    )
+
+
+@router.post("/voice", response_model=ProjectVoiceOut)
+async def voice_project(
+    project_id: uuid.UUID,
+    creator: Creator = Depends(get_current_creator),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ProjectVoiceOut:
+    """
+    Says every scene's line in one voice, over the clips already generated.
+
+    The guarantee the prompt cannot give. Veo generates each clip with no
+    memory of the last, so a prompt naming a voice is a request it can
+    decline - and declining it is how one video comes back with a woman
+    reading one scene and a man reading the next. Speech here is synthesised
+    by one configured speaker, so the whole video matches by construction.
+
+    Calls the video provider zero times. The pictures are already paid for.
+    """
+    summary = await voice_service.voice_every_scene(
+        db, settings, creator.id, project_id
+    )
+    return ProjectVoiceOut(
+        voiced=summary.voiced,
+        skipped=summary.skipped,
+        overrunning=summary.overrunning,
     )
 
 

@@ -27,10 +27,56 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { parseScriptBeats, renderScriptBeats } from "@/lib/workflow/script-beats";
 import { cn } from "@/lib/utils/cn";
-import type { Script } from "@/types/script";
+import type { RoadmapStep, Script } from "@/types/script";
 
 function errorDescription(err: unknown): string | undefined {
   return err instanceof Error ? err.message : undefined;
+}
+
+/**
+ * The topics the script was written from.
+ *
+ * Shown above the script rather than hidden behind it, because it is the
+ * part a creator can actually check. A Value beat that says "I put together
+ * a learning path" is impossible to fact-check and equally impossible to
+ * disprove; five named steps can be read in ten seconds and corrected.
+ *
+ * Read-only. Editing a step here would not change the script that was
+ * already written from it, and a roadmap that silently disagrees with the
+ * words underneath it is worse than none.
+ */
+function ResearchedRoadmap({ steps }: { steps: RoadmapStep[] }) {
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-6">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-foreground">Researched roadmap</p>
+          <p className="text-xs text-muted-foreground">
+            What the agent worked out before writing, and what the Value beat
+            is spoken from. Regenerate to research it again.
+          </p>
+        </div>
+        <ol className="space-y-2">
+          {[...steps]
+            .sort((a, b) => a.order - b.order)
+            .map((step, index) => (
+              <li
+                key={index}
+                className="flex gap-3 rounded-md border border-border bg-card px-3 py-2"
+              >
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                  {index + 1}
+                </span>
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-sm font-medium text-foreground">{step.topic}</p>
+                  <p className="text-xs text-muted-foreground">{step.detail}</p>
+                </div>
+              </li>
+            ))}
+        </ol>
+      </CardContent>
+    </Card>
+  );
 }
 
 export function ScriptView({ projectId }: { projectId: string }) {
@@ -91,7 +137,14 @@ export function ScriptView({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      <WorkflowHeader project={project.data} activeStep="script" />
+      <WorkflowHeader
+        project={project.data}
+        activeStep="script"
+        onLanguageChanged={() => {
+          project.retry();
+          scriptQuery.retry();
+        }}
+      />
 
       {scriptQuery.status === "loading" && (
         <div className="space-y-2">
@@ -116,7 +169,11 @@ export function ScriptView({ projectId }: { projectId: string }) {
 
       {scriptQuery.status === "success" && scriptQuery.data && (
         <ScriptEditor
-          key={scriptQuery.data.id}
+          // Language included, because a language change rewrites this
+          // version in place rather than making a new one. Without it the
+          // editor keeps the draft it loaded on mount and the new wording
+          // never reaches the fields.
+          key={`${scriptQuery.data.id}:${scriptQuery.data.language}`}
           projectId={projectId}
           script={scriptQuery.data}
           onChanged={scriptQuery.retry}
@@ -407,6 +464,10 @@ function ScriptEditor({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {!older && script.roadmap && script.roadmap.length > 0 && (
+        <ResearchedRoadmap steps={script.roadmap} />
       )}
 
       {!older && (

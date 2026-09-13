@@ -89,3 +89,17 @@ class SceneVoiceOut(BaseModel):
     pace: float
     overruns: bool
     overrun_seconds: float
+
+
+class ProjectVoiceOut(BaseModel):
+    """
+    What a whole-video voice pass did.
+
+    Scene numbers rather than counts, because the two lists a creator has to
+    act on are specific: the scenes with no clip yet, and the scenes whose
+    line is longer than the clip it has to fit in.
+    """
+
+    voiced: list[int]
+    skipped: list[int]
+    overrunning: list[int]

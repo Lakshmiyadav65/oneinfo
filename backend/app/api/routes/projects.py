@@ -12,9 +12,11 @@ from app.schemas.project import (
     IdeaSuggestionOut,
     IdeaSuggestionsIn,
     IdeaSuggestionsOut,
+    LanguageChangeOut,
     ProjectCreateIn,
     ProjectOut,
     ProjectUpdateIn,
+    RetranslationOut,
 )
 from app.schemas.output_settings import OutputSettings
 from app.schemas.storyboard import ProjectEnvironmentIn
@@ -89,14 +91,33 @@ async def get_project(
     return await project_service.get_owned_project(db, creator.id, project_id)
 
 
-@router.patch("/{project_id}", response_model=ProjectOut)
+@router.patch("/{project_id}", response_model=LanguageChangeOut)
 async def update_project(
     project_id: uuid.UUID,
     payload: ProjectUpdateIn,
     creator: Creator = Depends(get_current_creator),
     db: AsyncSession = Depends(get_db),
-) -> Project:
-    return await project_service.update_language(db, creator.id, project_id, payload.language)
+    settings: Settings = Depends(get_settings),
+) -> LanguageChangeOut:
+    """
+    The project's language, and everything already written in the old one.
+
+    Answers with what moved as well as with the project, so the creator is
+    told which of their work was restated instead of having to walk back
+    through the steps and check.
+    """
+    project, summary = await project_service.update_language(
+        db, settings, creator.id, project_id, payload.language
+    )
+    return LanguageChangeOut(
+        project=ProjectOut.model_validate(project),
+        retranslated=RetranslationOut(
+            hooks=summary.hooks,
+            script=summary.script,
+            scenes=summary.scenes,
+            scenes_with_clips=summary.scenes_with_clips,
+        ),
+    )
 
 
 @router.patch("/{project_id}/environment", response_model=ProjectOut)

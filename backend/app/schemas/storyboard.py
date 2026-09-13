@@ -1,7 +1,9 @@
 import uuid
+from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, computed_field, field_validator
 
+from app.providers.speech.base import speech_seconds as estimate_speech_seconds
 from app.schemas.environment import SceneEnvironment
 
 
@@ -11,7 +13,15 @@ class StoryboardSceneOut(BaseModel):
     id: uuid.UUID
     order: int
     duration_seconds: int
+    # Null when the length is still derived from the dialogue. The panel
+    # needs this to tell "Auto happened to pick 8s" from "somebody chose 8s",
+    # which are the same number and different states.
+    duration_override: int | None = None
     voiceover: str
+    # When the creator last rewrote that line, or null while it is still the
+    # agent's. Takes generated before it were made from words this scene no
+    # longer says, and the preview marks them so.
+    dialogue_edited_at: datetime | None = None
     visual_prompt: str
     caption: str
     features_creator: bool
@@ -26,6 +36,17 @@ class StoryboardSceneOut(BaseModel):
     # True once the creator has edited the visual description by hand, which
     # is what stops a change of setup from quietly rewriting their words.
     visual_is_custom: bool
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def speech_seconds(self) -> float:
+        """
+        How long this line takes to say, by the same estimate the length is
+        derived from. Sent rather than recomputed in the client so that
+        "does it fit?" is answered by one words-per-second figure, not two
+        that can drift apart.
+        """
+        return round(estimate_speech_seconds(self.voiceover), 2)
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -46,6 +67,18 @@ class StoryboardOut(BaseModel):
 
 class SceneOnCameraIn(BaseModel):
     features_creator: bool
+
+
+class SceneDurationIn(BaseModel):
+    """
+    How long this one clip runs, or null to go back to fitting the dialogue.
+
+    Validated against the provider rather than here: which lengths exist
+    depends on the video provider and on whether the creator is in frame,
+    and Veo answers both differently.
+    """
+
+    duration_seconds: int | None = None
 
 
 class SceneInclusionIn(BaseModel):
@@ -72,6 +105,18 @@ class SceneEnvironmentIn(BaseModel):
     # defaults, so "what YouTube Studio means" is defined in exactly one
     # place instead of being copied into the client.
     reset_to_preset: bool = False
+
+
+class SceneDialogueIn(BaseModel):
+    """
+    What this scene says, rewritten by the creator.
+
+    Nothing else here: the clip length and the prompt both follow the words
+    on the server, because getting either of them wrong is what produces
+    dead air or a clip talking over its own ending.
+    """
+
+    voiceover: str
 
 
 class SceneVisualIn(BaseModel):

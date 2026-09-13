@@ -83,11 +83,21 @@ def escape_drawtext(text: str) -> str:
 
 def escape_fontfile_path(path: str) -> str:
     """
-    drawtext parses its own filter string, so a Windows font path needs
-    forward slashes and an escaped drive colon (C\\:/Windows/... ) or the
-    filter fails to parse.
+    A file path in the form drawtext will actually accept, quotes included.
+
+    Two parsers sit between the argument and the option: the filter graph
+    splits on unescaped colons and commas first, then drawtext reads what is
+    left. A Windows drive colon has to survive both, and one backslash only
+    survives the first - which is why the single-escaped form this used to
+    return was rejected outright, for `fontfile` as much as for `textfile`.
+
+    Checked against ffmpeg on Windows a form at a time: bare, escaped without
+    quotes, and quoted with two backslashes all fail to parse the filter
+    graph. Quoted with one is the form that renders - which is why the
+    unquoted version this used to return was rejected outright, for
+    `fontfile` as much as for `textfile`.
     """
-    return path.replace("\\", "/").replace(":", "\\:")
+    return "'" + path.replace("\\", "/").replace(":", "\\:") + "'"
 
 
 async def probe_duration_seconds(ffprobe_path: str, file_path: str) -> float:
@@ -103,6 +113,31 @@ async def probe_duration_seconds(ffprobe_path: str, file_path: str) -> float:
     )
     data = json.loads(output)
     return float(data["format"]["duration"])
+
+
+async def peak_level_db(ffmpeg_path: str, file_path: str) -> float:
+    """
+    The loudest sample in a file, in dBFS. 0.0 is full scale; digital
+    silence reports around -91.
+
+    Exists because a track can be perfectly valid - right length, right
+    codec, plays without error - and contain no sound at all. Duration
+    cannot tell those apart, and neither can a creator until they have
+    exported the video and pressed play.
+
+    Returns -inf when ffmpeg reports no measurable level, which is as silent
+    as it gets.
+    """
+    stderr = await run_ffmpeg_for_stderr(
+        ffmpeg_path, ["-i", file_path, "-af", "volumedetect", "-f", "null", "-"]
+    )
+    for line in reversed(stderr.splitlines()):
+        if "max_volume:" in line:
+            try:
+                return float(line.split("max_volume:")[1].strip().split()[0])
+            except (IndexError, ValueError):
+                break
+    return float("-inf")
 
 
 @dataclass(frozen=True)

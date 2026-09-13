@@ -137,7 +137,12 @@ export default function LoginPage() {
         <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
           <p className="font-medium text-foreground">Development mode</p>
           <p className="mt-1">
-            No backend is connected yet. Sign in with any password using:
+            Supabase isn&apos;t configured, so any address signs in with any
+            password and gets its own creator — its own knowledge, projects
+            and videos, separate from everyone else&apos;s.
+          </p>
+          <p className="mt-1">
+            These two already have work filed under them:
           </p>
           <ul className="mt-1 list-inside list-disc">
             {MOCK_DEMO_ACCOUNTS.map((account) => (

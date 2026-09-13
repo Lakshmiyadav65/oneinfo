@@ -27,7 +27,7 @@ from app.providers.video.base import (
 )
 from app.schemas.export import ExportFormat, ExportRequest
 from app.schemas.output_settings import ModelTier, Resolution
-from app.services import creator_face_service, project_service
+from app.services import creator_face_service, project_service, storyboard_service
 from app.services.project_service import (
     export_size,
     output_size,
@@ -581,6 +581,7 @@ async def _finish_video(
     render_inputs: list[Path],
     output,
     temp_files: list[Path],
+    captions: list[str | None] | None = None,
 ) -> None:
     """
     Stitches the clips into the finished video and marks the run done.
@@ -593,7 +594,7 @@ async def _finish_video(
     await db.commit()
 
     final_path, duration = await render_final_video(
-        settings, render_inputs, size=_render_size(job, output)
+        settings, render_inputs, size=_render_size(job, output), captions=captions
     )
     temp_files.append(final_path)
 
@@ -673,6 +674,17 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     "nothing to render. Put at least one back in."
                 )
 
+            # Composed again from the scene as it now stands, before a
+            # single billable request goes out. The prompt is derived from
+            # the setup, the line, the language and whether the creator is
+            # in frame; it is stored so they can read it, and stored means
+            # it can be behind any of those. Anything they wrote by hand is
+            # left exactly as they wrote it.
+            await storyboard_service.refresh_visual_prompts(
+                db, project.creator_id, scenes
+            )
+            await db.commit()
+
             # Set before the first (billable) request goes out, so the UI can
             # show real progress from the moment the run starts rather than an
             # unbounded spinner.
@@ -683,6 +695,11 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             storage = get_storage_provider(settings)
             output = project_output_settings(project)
             render_inputs: list[Path] = []
+            # One entry per clip, in the same order. The line is drawn on
+            # b-roll only: a scene where the creator is on screen already
+            # has someone saying it, and printing it underneath them says
+            # the same thing twice.
+            captions: list[str | None] = []
 
             if job.stitch_only:
                 # Never touches the video provider, which is the whole point:
@@ -708,11 +725,13 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     local_path.write_bytes(clip_bytes)
                     temp_files.append(local_path)
                     render_inputs.append(local_path)
+                    captions.append(None if scene.features_creator else scene.voiceover)
                     job.scenes_completed = index
                     await db.commit()
 
                 await _finish_video(
-                    db, settings, storage, job, project, render_inputs, output, temp_files
+                    db, settings, storage, job, project, render_inputs, output,
+                    temp_files, captions,
                 )
                 return
 
@@ -803,6 +822,7 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 # Indexed locally: take_paths holds only this run's files,
                 # while selected_take counts from the scene's whole history.
                 render_inputs.append(take_paths[0])
+                captions.append(None if scene.features_creator else scene.voiceover)
                 job.scenes_completed = index
                 await db.commit()
 
@@ -818,7 +838,8 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 return
 
             await _finish_video(
-                db, settings, storage, job, project, render_inputs, output, temp_files
+                db, settings, storage, job, project, render_inputs, output,
+                temp_files, captions,
             )
         except Exception as exc:
             await db.rollback()
