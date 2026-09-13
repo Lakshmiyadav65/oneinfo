@@ -5,6 +5,7 @@ import {
   Clapperboard,
   FolderKanban,
   Settings,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import type { Route } from "next";
@@ -21,6 +22,7 @@ export const primaryNavItems: NavItem[] = [
   { label: "Create Video", href: "/create", icon: Wand2 },
   { label: "Projects", href: "/projects", icon: FolderKanban },
   { label: "Media", href: "/media", icon: Clapperboard },
+  { label: "Posters", href: "/posters", icon: Sparkles },
 ];
 
 export const secondaryNavItems: NavItem[] = [

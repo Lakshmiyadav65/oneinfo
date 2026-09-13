@@ -4,6 +4,7 @@ const TITLES: { prefix: string; title: string }[] = [
   { prefix: "/create", title: "Create Video" },
   { prefix: "/projects", title: "Projects" },
   { prefix: "/media", title: "Media" },
+  { prefix: "/posters", title: "Posters" },
   { prefix: "/settings", title: "Settings" },
 ];
 
