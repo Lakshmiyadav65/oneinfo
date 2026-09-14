@@ -26,8 +26,8 @@ export function StyleSizePicker({
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <p className="text-xs font-medium text-muted-foreground">Look</p>
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Poster style">
+        <p className="text-xs font-medium text-muted-foreground">Colours</p>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Poster colours">
           {POSTER_STYLES.map((option) => {
             const swatch = styleSwatch(option.value);
             const selected = option.value === style;

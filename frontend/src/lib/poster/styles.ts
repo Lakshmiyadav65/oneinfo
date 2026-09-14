@@ -1,15 +1,23 @@
 /**
- * The six looks, as colour.
+ * The palettes, as colour.
  *
  * A template never names a colour. It asks for `style.ink`, `style.accent`,
  * `style.onAccent` - so the same template draws a festive gold poster and a
- * clean white one without knowing which it is doing. That is also what makes
- * the later move to generated backgrounds cheap: `contrast` is declared by the
- * style today and can be *computed* from a generated image tomorrow, and
- * because templates only ever read it through here, none of them change.
+ * clean white one without knowing which it is doing. Decor follows the same
+ * rule, which is why a diya drawn on the Royal palette and on the Emerald one
+ * both look like they belong.
+ *
+ * Backgrounds are built from a palette's colours rather than stored whole. A
+ * gallery design says "rays" or "gradient"; the palette says which colours.
+ * That separation is what lets an owner switch palettes on a design without
+ * ending up with dark text on a dark background they did not choose.
+ *
+ * `contrast` is declared per palette today. The day backgrounds are generated
+ * rather than chosen, it gets sampled from the image instead, and because
+ * templates only ever read it through here, none of them change.
  */
 
-import type { PosterBackground, PosterStyle } from "@/types/poster";
+import type { PosterBackground, PosterPatternId, PosterStyle } from "@/types/poster";
 import type { PosterFontStacks } from "@/lib/poster/fonts";
 
 export type ResolvedStyle = {
@@ -17,32 +25,35 @@ export type ResolvedStyle = {
   /** Body and headline text sitting directly on the background. */
   ink: string;
   inkMuted: string;
-  /** The offer slab, the badge, the CTA pill. */
+  /** The offer slab, the badge, the CTA pill, gold in the decor. */
   accent: string;
   /** Text on top of `accent`. */
   onAccent: string;
   /** A panel laid over the background, for the brand bar. */
   panel: string;
   onPanel: string;
-  /**
-   * Whether the background is light or dark. Declared here today; the day a
-   * background is generated rather than chosen, this gets sampled from the
-   * image instead and nothing downstream notices.
-   */
   contrast: "light" | "dark";
   display: string;
   body: string;
   displayWeight: number;
   headlineWeight: number;
   bodyWeight: number;
+  /** The background's own colours, for decor that has to sit into it. */
+  base: string;
+  pattern: string;
 };
 
-type StylePreset = Omit<ResolvedStyle, "display" | "body" | "id"> & {
-  /** What this style paints behind everything when the owner has not chosen. */
-  background: PosterBackground;
+/** How a background is painted, independent of which colours it uses. */
+export type BackgroundLook = PosterPatternId | "gradient" | "solid";
+
+type Palette = Omit<ResolvedStyle, "display" | "body" | "id"> & {
+  from: string;
+  to: string;
+  angle: number;
+  look: BackgroundLook;
 };
 
-const PRESETS: Record<PosterStyle, StylePreset> = {
+const PALETTES: Record<PosterStyle, Palette> = {
   festive_gold: {
     ink: "#FFF7E6",
     inkMuted: "#E8D3A8",
@@ -54,7 +65,12 @@ const PRESETS: Record<PosterStyle, StylePreset> = {
     displayWeight: 800,
     headlineWeight: 800,
     bodyWeight: 400,
-    background: { kind: "pattern", patternId: "rays", color: "#6B0F1A", accent: "#8C1626" },
+    base: "#6B0F1A",
+    pattern: "#8C1626",
+    from: "#7A1220",
+    to: "#4A0A14",
+    angle: 160,
+    look: "rays",
   },
   bold_offer: {
     ink: "#FFFFFF",
@@ -67,10 +83,15 @@ const PRESETS: Record<PosterStyle, StylePreset> = {
     displayWeight: 800,
     headlineWeight: 800,
     bodyWeight: 500,
-    // Starts at a deeper orange than the obvious one. #F97316 is the prettier
-    // colour but only reaches 2.8:1 against white text, and this style exists
+    // Starts at a deeper red than the obvious orange. #F97316 is the prettier
+    // colour but only reaches 2.8:1 against white text, and this palette exists
     // to be read across a shop from a phone screen.
-    background: { kind: "gradient", from: "#DC2626", to: "#8C1407", angle: 135 },
+    base: "#B91C1C",
+    pattern: "#DC2626",
+    from: "#DC2626",
+    to: "#8C1407",
+    angle: 135,
+    look: "gradient",
   },
   clean_minimal: {
     ink: "#111827",
@@ -83,7 +104,12 @@ const PRESETS: Record<PosterStyle, StylePreset> = {
     displayWeight: 800,
     headlineWeight: 700,
     bodyWeight: 400,
-    background: { kind: "solid", color: "#FFFFFF" },
+    base: "#FFFFFF",
+    pattern: "#F3F4F6",
+    from: "#FFFFFF",
+    to: "#F3F4F6",
+    angle: 180,
+    look: "solid",
   },
   warm_traditional: {
     ink: "#6B1020",
@@ -96,7 +122,12 @@ const PRESETS: Record<PosterStyle, StylePreset> = {
     displayWeight: 800,
     headlineWeight: 700,
     bodyWeight: 400,
-    background: { kind: "pattern", patternId: "mandala", color: "#FDF3D8", accent: "#EBD08E" },
+    base: "#FDF3D8",
+    pattern: "#EBD08E",
+    from: "#FDF3D8",
+    to: "#F6E3B4",
+    angle: 180,
+    look: "mandala",
   },
   modern_dark: {
     ink: "#F9FAFB",
@@ -109,7 +140,12 @@ const PRESETS: Record<PosterStyle, StylePreset> = {
     displayWeight: 800,
     headlineWeight: 700,
     bodyWeight: 400,
-    background: { kind: "gradient", from: "#1F2937", to: "#0B0F17", angle: 160 },
+    base: "#111827",
+    pattern: "#1F2937",
+    from: "#1F2937",
+    to: "#0B0F17",
+    angle: 160,
+    look: "gradient",
   },
   playful_bright: {
     ink: "#FFFFFF",
@@ -122,44 +158,139 @@ const PRESETS: Record<PosterStyle, StylePreset> = {
     displayWeight: 800,
     headlineWeight: 800,
     bodyWeight: 500,
-    // Indigo-600 rather than 500: the lighter one lands at 4.47:1, which is
-    // near enough to pass by eye and not near enough to actually pass.
-    background: { kind: "gradient", from: "#4F46E5", to: "#BE185D", angle: 145 },
+    // Indigo-600 and -700 rather than 500: the lighter one lands at 4.47:1,
+    // which is near enough to pass by eye and not near enough to pass.
+    base: "#4F46E5",
+    pattern: "#4338CA",
+    from: "#4F46E5",
+    to: "#BE185D",
+    angle: 145,
+    look: "gradient",
+  },
+  royal_purple: {
+    ink: "#FFF7E6",
+    inkMuted: "#E9D5FF",
+    accent: "#F5C542",
+    onAccent: "#3B0764",
+    panel: "#00000044",
+    onPanel: "#FFF7E6",
+    contrast: "dark",
+    displayWeight: 800,
+    headlineWeight: 800,
+    bodyWeight: 400,
+    base: "#3B0764",
+    pattern: "#581C87",
+    from: "#4C1D95",
+    to: "#2E1065",
+    angle: 160,
+    look: "gradient",
+  },
+  sky_blue: {
+    ink: "#FFFFFF",
+    inkMuted: "#E0F2FE",
+    accent: "#FACC15",
+    onAccent: "#0C4A6E",
+    panel: "#00000033",
+    onPanel: "#FFFFFF",
+    contrast: "dark",
+    displayWeight: 800,
+    headlineWeight: 800,
+    bodyWeight: 500,
+    // Deeper than a real sky. The kite-day blue people picture is around
+    // #38BDF8, which gives white text barely 2:1.
+    base: "#075985",
+    pattern: "#0369A1",
+    from: "#0369A1",
+    to: "#0C4A6E",
+    angle: 180,
+    look: "gradient",
+  },
+  emerald_gold: {
+    ink: "#FFFBEB",
+    inkMuted: "#D1FAE5",
+    accent: "#FBBF24",
+    onAccent: "#064E3B",
+    panel: "#00000040",
+    onPanel: "#FFFBEB",
+    contrast: "dark",
+    displayWeight: 800,
+    headlineWeight: 700,
+    bodyWeight: 400,
+    base: "#065F46",
+    pattern: "#047857",
+    from: "#047857",
+    to: "#064E3B",
+    angle: 165,
+    look: "gradient",
+  },
+  rose_pink: {
+    ink: "#FFFFFF",
+    inkMuted: "#FCE7F3",
+    accent: "#FDE68A",
+    onAccent: "#831843",
+    panel: "#00000033",
+    onPanel: "#FFFFFF",
+    contrast: "dark",
+    displayWeight: 800,
+    headlineWeight: 800,
+    bodyWeight: 400,
+    base: "#9D174D",
+    pattern: "#BE185D",
+    from: "#BE185D",
+    to: "#831843",
+    angle: 150,
+    look: "gradient",
   },
 };
 
+function paletteFor(id: PosterStyle): Palette {
+  return PALETTES[id] ?? PALETTES.festive_gold;
+}
+
 export function resolveStyle(id: PosterStyle, stacks: PosterFontStacks): ResolvedStyle {
-  const preset = PRESETS[id] ?? PRESETS.festive_gold;
+  const p = paletteFor(id);
   return {
     id,
-    ink: preset.ink,
-    inkMuted: preset.inkMuted,
-    accent: preset.accent,
-    onAccent: preset.onAccent,
-    panel: preset.panel,
-    onPanel: preset.onPanel,
-    contrast: preset.contrast,
-    displayWeight: preset.displayWeight,
-    headlineWeight: preset.headlineWeight,
-    bodyWeight: preset.bodyWeight,
+    ink: p.ink,
+    inkMuted: p.inkMuted,
+    accent: p.accent,
+    onAccent: p.onAccent,
+    panel: p.panel,
+    onPanel: p.onPanel,
+    contrast: p.contrast,
+    displayWeight: p.displayWeight,
+    headlineWeight: p.headlineWeight,
+    bodyWeight: p.bodyWeight,
+    base: p.base,
+    pattern: p.pattern,
     display: stacks.display,
     body: stacks.body,
   };
 }
 
-/** What this style paints behind everything, before the owner changes it. */
-export function defaultBackgroundFor(id: PosterStyle): PosterBackground {
-  return (PRESETS[id] ?? PRESETS.festive_gold).background;
+/**
+ * A background in this palette's colours.
+ *
+ * `look` comes from the gallery design when there is one, and from the
+ * palette's own preference otherwise.
+ */
+export function backgroundFor(id: PosterStyle, look?: BackgroundLook): PosterBackground {
+  const p = paletteFor(id);
+  const chosen = look ?? p.look;
+  if (chosen === "solid") return { kind: "solid", color: p.base };
+  if (chosen === "gradient") return { kind: "gradient", from: p.from, to: p.to, angle: p.angle };
+  return { kind: "pattern", patternId: chosen, color: p.base, accent: p.pattern };
 }
 
-/** A swatch for the style picker, so the choice is visible rather than named. */
+/** Light or dark ground, for choosing how to dim a photo under this palette. */
+export function paletteContrast(id: PosterStyle): "light" | "dark" {
+  return paletteFor(id).contrast;
+}
+
+/** A swatch for the palette picker, so the choice is seen rather than named. */
 export function styleSwatch(id: PosterStyle): { from: string; to: string; ink: string } {
-  const preset = PRESETS[id] ?? PRESETS.festive_gold;
-  const bg = preset.background;
-  if (bg.kind === "gradient") return { from: bg.from, to: bg.to, ink: preset.accent };
-  if (bg.kind === "solid") return { from: bg.color, to: bg.color, ink: preset.accent };
-  if (bg.kind === "pattern") return { from: bg.color, to: bg.accent, ink: preset.accent };
-  return { from: "#000000", to: "#000000", ink: preset.accent };
+  const p = paletteFor(id);
+  return { from: p.from, to: p.to, ink: p.accent };
 }
 
 /* ------------------------------------------------------------------ *
@@ -189,25 +320,24 @@ export function contrastRatio(a: string, b: string): number {
 /**
  * A poster's contrast cannot be linted, because the output is an image.
  *
- * So it is checked here instead, once, in development. Text nobody can read is
- * the actual failure mode for this feature - a shop owner will not notice on a
- * bright phone screen, and their customers will see it on every other kind.
+ * So it is checked here instead, once, in development, against every colour
+ * the text can land on - the solid ground, both ends of the gradient, and the
+ * pattern's second colour. Text nobody can read is the actual failure mode for
+ * this feature: a shop owner will not notice on a bright phone screen, and
+ * their customers will see it on every other kind.
  */
 function assertReadableInDev(): void {
   if (process.env.NODE_ENV === "production") return;
-  for (const [id, preset] of Object.entries(PRESETS)) {
-    const bg = preset.background;
-    const base =
-      bg.kind === "solid" ? bg.color : bg.kind === "gradient" ? bg.from : bg.kind === "pattern" ? bg.color : null;
-    if (!base) continue;
-
-    const inkRatio = contrastRatio(preset.ink, base);
-    if (inkRatio < 4.5) {
-      console.warn(`[poster] style "${id}": ink on background is ${inkRatio.toFixed(2)}:1, below 4.5`);
+  for (const [id, p] of Object.entries(PALETTES)) {
+    for (const ground of [p.base, p.pattern, p.from, p.to]) {
+      const ratio = contrastRatio(p.ink, ground);
+      if (ratio < 4.5) {
+        console.warn(`[poster] palette "${id}": ink on ${ground} is ${ratio.toFixed(2)}:1, below 4.5`);
+      }
     }
-    const accentRatio = contrastRatio(preset.onAccent, preset.accent);
-    if (accentRatio < 4.5) {
-      console.warn(`[poster] style "${id}": text on accent is ${accentRatio.toFixed(2)}:1, below 4.5`);
+    const onAccent = contrastRatio(p.onAccent, p.accent);
+    if (onAccent < 4.5) {
+      console.warn(`[poster] palette "${id}": text on accent is ${onAccent.toFixed(2)}:1, below 4.5`);
     }
   }
 }

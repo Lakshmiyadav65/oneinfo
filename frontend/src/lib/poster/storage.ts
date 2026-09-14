@@ -24,6 +24,7 @@
  */
 
 import { z } from "zod";
+import { deletePhoto, isStoredPhoto } from "@/lib/poster/photo-store";
 import {
   DEFAULT_BRAND,
   type BrandProfile,
@@ -180,6 +181,9 @@ const designSchema = z.object({
     accentColor: z.string().nullable(),
   }),
   background: z.object({ kind: z.string() }).loose(),
+  // Optional, so posters saved before decor existed still parse. Loose per
+  // item, so an ornament added later does not invalidate older builds' reads.
+  decor: z.array(z.object({ kind: z.string() }).loose()).optional(),
   photo: z.object({ slot: z.string(), src: z.string() }).loose().nullable(),
 });
 
@@ -196,6 +200,15 @@ const postSchema = z.object({
   copy_variant_id: z.string(),
   design: designSchema,
   thumbnail_data_url: z.string().nullable(),
+  design_id: z.string().nullable().optional(),
+  photo: z
+    .object({
+      src: z.string(),
+      focus: z.object({ x: z.number(), y: z.number() }),
+      strength: z.enum(["vivid", "balanced", "muted"]),
+    })
+    .nullable()
+    .optional(),
 });
 
 const envelopeSchema = z.object({
@@ -301,7 +314,32 @@ export function savePost(post: PosterPost): StorageResult {
 export function deletePost(id: string): StorageResult {
   const { posts, unreadable } = loadPosts();
   if (unreadable) return { ok: false, reason: "corrupt" };
-  return writePosts(posts.filter((p) => p.id !== id));
+  const removed = posts.find((p) => p.id === id);
+  const result = writePosts(posts.filter((p) => p.id !== id));
+  if (result.ok && removed?.photo) void forgetPhotoIfUnused(removed.photo.src);
+  return result;
+}
+
+/* ------------------------------------------------------------------ *
+ * Photos
+ * ------------------------------------------------------------------ */
+
+/**
+ * Deletes a stored photo once nothing points at it any more.
+ *
+ * Checked against every saved poster and the open draft, because photos are
+ * shared rather than copied: "make another like this" gives the new draft the
+ * same photo reference, and deleting the original must not blank the copy.
+ */
+export async function forgetPhotoIfUnused(ref: string): Promise<void> {
+  if (!isStoredPhoto(ref)) return;
+  const { posts, unreadable } = loadPosts();
+  // A library we cannot read might well reference it. Keep the photo.
+  if (unreadable) return;
+  if (posts.some((p) => p.photo?.src === ref)) return;
+  const draft = loadDraft<{ photo?: { src?: string } | null }>();
+  if (draft?.photo?.src === ref) return;
+  await deletePhoto(ref);
 }
 
 /* ------------------------------------------------------------------ *

@@ -7,9 +7,12 @@ import { CalendarDays, Pencil, Sparkles, Tag } from "lucide-react";
 import { categoryLabel, type PosterPost } from "@/types/poster";
 import { daysUntilLabel, shortDate, upcomingOccasions } from "@/lib/poster/occasions";
 import { saveDraft } from "@/lib/poster/storage";
+import { GALLERY_DESIGNS } from "@/lib/poster/gallery";
+import { sampleDesign } from "@/lib/poster/design";
 import { useBrandProfile } from "@/hooks/useBrandProfile";
 import { usePosterLibrary } from "@/hooks/usePosterLibrary";
 import { BrandKitForm } from "@/components/poster/BrandKitForm";
+import { DesignGallery } from "@/components/poster/DesignGallery";
 import { PosterTabs } from "@/components/poster/PosterTabs";
 import { PosterTile } from "@/components/poster/PosterTile";
 import { Badge } from "@/components/ui/Badge";
@@ -61,6 +64,11 @@ export default function PostersPage() {
       size: post.size,
       edits: {},
       variantId: null,
+      designId: post.design_id ?? null,
+      designChosen: Boolean(post.design_id),
+      // The same stored photo, not a copy: deleting the original checks for
+      // this draft before it removes the file.
+      photo: post.photo ?? null,
     });
     router.push("/posters/new");
   };
@@ -157,6 +165,28 @@ export default function PostersPage() {
           </Card>
         ))}
 
+      <section className="space-y-3" aria-labelledby="designs-heading">
+        <div>
+          <h3 id="designs-heading" className="text-base font-semibold text-foreground">
+            Start from a design
+          </h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Tap one and make it yours - your offer, your shop, even your own photo.
+            Every word can be changed.
+          </p>
+        </div>
+        <DesignGallery
+          layout="grid"
+          showFilters
+          designs={GALLERY_DESIGNS}
+          makeDesign={(design) => sampleDesign(design, brand)}
+          // Re-drawn when the shop's details change, so the gallery shows
+          // their own name and logo rather than the placeholder.
+          renderKey={JSON.stringify([loaded, brand.shop_name, brand.phone, brand.logo_data_url?.length ?? 0])}
+          hrefFor={(design) => `/posters/new?design=${design.id}`}
+        />
+      </section>
+
       {library.ephemeral && (
         <p className="text-xs text-muted-foreground">
           This browser isn&apos;t saving site data, so posters will only last until you
@@ -180,13 +210,17 @@ export default function PostersPage() {
         <EmptyState
           icon={Sparkles}
           title="No posters yet"
-          description="Pick a festival or type your offer — you'll have one in about a minute."
+          description="Pick a design above or type your offer — you'll have one in about a minute."
           action={
             <Button asChild>
               <Link href="/posters/new">Make a poster</Link>
             </Button>
           }
         />
+      )}
+
+      {posts.length > 0 && (
+        <h3 className="text-base font-semibold text-foreground">Your posters</h3>
       )}
 
       {posts.length > 0 && (

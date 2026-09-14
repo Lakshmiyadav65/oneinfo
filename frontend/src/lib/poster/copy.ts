@@ -208,8 +208,6 @@ type Ctx = {
   occasionName: string;
   shopName: string;
   offer: Offer;
-  offering: boolean;
-  offerText: string;
   details: string;
   subject: string;
   validity: string;
@@ -252,40 +250,66 @@ function tidy(text: string): string {
 type Bank = { headline: Frag[]; subline: Frag[] };
 type AngleBank = Partial<Record<CopyAngle, Record<Voice, Bank>>>;
 
+/*
+ * Two rules the banks below follow, both learned from looking at real output:
+ *
+ * NEVER REPEAT THE OFFER. Whenever the angle is "offer" the template draws the
+ * offer on its own slab, huge. A subline saying "Buy one get one free" under a
+ * slab saying "BUY 1 GET 1 FREE" wastes the one line that could have said what
+ * the offer is on, or when it ends. So offer copy talks about everything
+ * *except* the offer.
+ *
+ * WHEN A CHOICE CARRIES INFORMATION, MAKE IT EXCLUSIVE. Fragments are tried in
+ * a shuffled order, so two that both qualify are a coin toss. That is fine for
+ * wording ("Diwali special" or "Celebrate Diwali with us") and wrong for facts:
+ * a Sankranti poster must never come out headlined "Just for this week" because
+ * the shuffle happened to prefer it. Fragments that would drop the festival, the
+ * subject, or what the offer is on decline whenever those exist.
+ */
+
 const EN: AngleBank = {
   offer: {
     warm: {
       headline: [
         (c) => (c.occasionName ? `${c.occasionName} special` : null),
-        () => "Just for this week",
-        (c) => (c.shopName ? `A little something from ${c.shopName}` : null),
+        (c) => (c.occasionName ? `Celebrate ${c.occasionName} with us` : null),
+        (c) => (!c.occasionName && c.subject ? cap(c.subject) : null),
+        (c) => (!c.occasionName && !c.subject ? "Just for this week" : null),
       ],
       subline: [
-        (c) => (c.offerText ? `${cap(c.offerText)}${c.validity ? `, ${c.validity}` : ""}` : null),
-        (c) => `${cap(c.vocab.action)} ${c.vocab.goods} before it runs out`,
+        (c) => (c.offer.item ? `On ${c.offer.item}${c.validity ? `, ${c.validity}` : ""}` : null),
+        (c) => (!c.offer.item && c.details ? c.details : null),
+        (c) => (!c.offer.item && !c.details && c.validity ? `Hurry, ${c.validity}` : null),
+        (c) =>
+          !c.offer.item && !c.details && !c.validity
+            ? `${cap(c.vocab.action)} before it runs out`
+            : null,
+        (c) =>
+          !c.offer.item && !c.details && !c.validity ? `Come in for ${c.vocab.treat}` : null,
       ],
     },
     direct: {
       headline: [
-        (c) => (c.offerText ? cap(c.offerText) : null),
         (c) => (c.occasionName ? `${c.occasionName} offer` : null),
-        () => "Offer on now",
+        (c) => (!c.occasionName && c.subject ? cap(c.subject) : null),
+        (c) => (!c.occasionName && !c.subject ? "Offer on now" : null),
       ],
       subline: [
-        (c) => (c.validity ? cap(c.validity) : null),
-        (c) => (c.details ? c.details : null),
-        (c) => `On all ${c.vocab.goods}`,
+        (c) => (c.validity ? `${cap(c.validity)}${c.offer.item ? ` on ${c.offer.item}` : ""}` : null),
+        (c) => (!c.validity && c.offer.item ? `On ${c.offer.item}` : null),
+        (c) => (!c.validity && !c.offer.item && c.details ? c.details : null),
+        (c) => (!c.validity && !c.offer.item && !c.details ? "While stocks last" : null),
       ],
     },
     short: {
       headline: [
-        (c) => (c.occasionName ? `${c.occasionName} offer` : null),
-        () => "This week only",
-        () => "Offer on",
+        (c) => (c.occasionName ? `Happy ${c.occasionName}` : null),
+        (c) => (!c.occasionName ? "This week only" : null),
       ],
       subline: [
         (c) => (c.validity ? cap(c.validity) : null),
-        (c) => (c.shopName ? `At ${c.shopName}` : null),
+        (c) => (!c.validity && c.shopName ? `Only at ${c.shopName}` : null),
+        (c) => (!c.validity && !c.shopName ? "Limited time" : null),
       ],
     },
   },
@@ -293,27 +317,29 @@ const EN: AngleBank = {
     warm: {
       headline: [
         (c) => (c.occasionName ? `Happy ${c.occasionName}` : null),
-        (c) => (c.subject ? `Happy ${c.subject}` : null),
+        (c) => (!c.occasionName && c.subject ? `Happy ${c.subject}` : null),
+        (c) => (!c.occasionName && !c.subject ? "Warm wishes" : null),
       ],
       subline: [
         (c) => (c.shopName ? `From all of us at ${c.shopName}` : null),
-        () => "Wishing you and your family a good one",
+        (c) => (!c.shopName ? "Wishing you and your family a good one" : null),
       ],
     },
     direct: {
       headline: [
         (c) => (c.occasionName ? `${c.occasionName} wishes` : null),
-        (c) => (c.subject ? `${c.subject} wishes` : null),
+        (c) => (!c.occasionName && c.subject ? `${cap(c.subject)} wishes` : null),
+        (c) => (!c.occasionName && !c.subject ? "Best wishes" : null),
       ],
       subline: [
-        (c) => (c.shopName ? `${c.shopName}` : null),
         (c) => (c.details ? c.details : null),
+        (c) => (!c.details && c.shopName ? c.shopName : null),
       ],
     },
     short: {
       headline: [
         (c) => (c.occasionName ? `Happy ${c.occasionName}` : null),
-        () => "Best wishes",
+        (c) => (!c.occasionName ? "Best wishes" : null),
       ],
       subline: [(c) => (c.shopName ? c.shopName : null)],
     },
@@ -322,20 +348,33 @@ const EN: AngleBank = {
     warm: {
       headline: [
         (c) => (c.subject ? cap(c.subject) : null),
-        (c) => `${cap(c.vocab.arrivals)} is in`,
+        (c) => (!c.subject ? `${cap(c.vocab.arrivals)} is in` : null),
       ],
       subline: [
         (c) => (c.details ? c.details : null),
-        () => "Come and have a look",
+        (c) => (!c.details ? "Come and have a look" : null),
       ],
     },
     direct: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "Now open"],
-      subline: [(c) => (c.details ? c.details : null), (c) => (c.shopName ? c.shopName : null)],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "Now open" : null),
+      ],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details && c.shopName ? `At ${c.shopName}` : null),
+        (c) => (!c.details && !c.shopName ? "See you soon" : null),
+      ],
     },
     short: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "News"],
-      subline: [(c) => (c.details ? c.details : null)],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "Big news" : null),
+      ],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details ? "Visit us" : null),
+      ],
     },
   },
   new_arrival: {
@@ -343,12 +382,15 @@ const EN: AngleBank = {
       headline: [(c) => `${cap(c.vocab.arrivals)} is here`, () => "Just arrived"],
       subline: [
         (c) => (c.details ? c.details : null),
-        (c) => `${cap(c.vocab.action)} before the good ones go`,
+        (c) => (!c.details ? `${cap(c.vocab.action)} before the good ones go` : null),
       ],
     },
     direct: {
       headline: [() => "New arrivals", (c) => cap(c.vocab.arrivals)],
-      subline: [(c) => (c.offerText ? cap(c.offerText) : null), (c) => (c.details ? c.details : null)],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details && c.shopName ? `Now at ${c.shopName}` : null),
+      ],
     },
     short: {
       headline: [() => "Just in"],
@@ -360,12 +402,15 @@ const EN: AngleBank = {
       headline: [() => "Thank you", (c) => (c.occasionName ? `Happy ${c.occasionName}` : null)],
       subline: [
         (c) => (c.shopName ? `Everyone at ${c.shopName} is grateful for you` : null),
-        () => "For trusting us all these years",
+        (c) => (!c.shopName ? "For trusting us all these years" : null),
       ],
     },
     direct: {
       headline: [() => "Thank you"],
-      subline: [(c) => (c.details ? c.details : null), (c) => (c.shopName ? c.shopName : null)],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details && c.shopName ? c.shopName : null),
+      ],
     },
     short: {
       headline: [() => "Thank you"],
@@ -375,7 +420,10 @@ const EN: AngleBank = {
   social_proof: {
     warm: {
       headline: [() => "What our customers say"],
-      subline: [(c) => (c.details ? `"${c.details}"` : null), () => "Come see for yourself"],
+      subline: [
+        (c) => (c.details ? `"${c.details}"` : null),
+        (c) => (!c.details ? "Come see for yourself" : null),
+      ],
     },
     direct: {
       headline: [() => "Customer review"],
@@ -388,11 +436,20 @@ const EN: AngleBank = {
   },
   invite: {
     warm: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "You are invited"],
-      subline: [(c) => (c.details ? c.details : null), (c) => (c.shopName ? `At ${c.shopName}` : null)],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "You are invited" : null),
+      ],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details && c.shopName ? `At ${c.shopName}` : null),
+      ],
     },
     direct: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "Join us"],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "Join us" : null),
+      ],
       subline: [(c) => (c.details ? c.details : null)],
     },
     short: {
@@ -407,64 +464,101 @@ const TENGLISH: AngleBank = {
     warm: {
       headline: [
         (c) => (c.occasionName ? `${c.occasionName} special` : null),
-        () => "Mee kosam special offer",
+        (c) => (c.occasionName ? `${c.occasionName} ki special offer` : null),
+        (c) => (!c.occasionName && c.subject ? cap(c.subject) : null),
+        (c) => (!c.occasionName && !c.subject ? "Mee kosam special offer" : null),
       ],
       subline: [
-        (c) => (c.offerText ? `${cap(c.offerText)}${c.validity ? `, ${c.validity}` : ""}` : null),
-        (c) => `${cap(c.vocab.goods)} meeda offer`,
+        (c) => (c.offer.item ? `${cap(c.offer.item)} meeda${c.validity ? `, ${c.validity}` : ""}` : null),
+        (c) => (!c.offer.item && c.details ? c.details : null),
+        (c) => (!c.offer.item && !c.details && c.validity ? `Tondaraga randi, ${c.validity}` : null),
+        (c) =>
+          !c.offer.item && !c.details && !c.validity ? `${cap(c.vocab.goods)} ayipoyelopu randi` : null,
+        (c) => (!c.offer.item && !c.details && !c.validity ? "Ee roje randi" : null),
       ],
     },
     direct: {
       headline: [
-        (c) => (c.offerText ? cap(c.offerText) : null),
         (c) => (c.occasionName ? `${c.occasionName} offer` : null),
-        () => "Offer ippude",
+        (c) => (!c.occasionName && c.subject ? cap(c.subject) : null),
+        (c) => (!c.occasionName && !c.subject ? "Offer ippude" : null),
       ],
       subline: [
         (c) => (c.validity ? cap(c.validity) : null),
-        (c) => (c.details ? c.details : null),
+        (c) => (!c.validity && c.offer.item ? `${cap(c.offer.item)} meeda` : null),
+        (c) => (!c.validity && !c.offer.item && c.details ? c.details : null),
+        (c) => (!c.validity && !c.offer.item && !c.details ? "Stock unnantha varake" : null),
       ],
     },
     short: {
       headline: [
-        (c) => (c.occasionName ? `${c.occasionName} offer` : null),
-        () => "Ee week matrame",
+        (c) => (c.occasionName ? `Happy ${c.occasionName}` : null),
+        (c) => (!c.occasionName ? "Ee week matrame" : null),
       ],
-      subline: [(c) => (c.shopName ? `${c.shopName} lo` : null)],
+      subline: [
+        (c) => (c.validity ? cap(c.validity) : null),
+        (c) => (!c.validity && c.shopName ? `${c.shopName} lo matrame` : null),
+        (c) => (!c.validity && !c.shopName ? "Konni rojulu matrame" : null),
+      ],
     },
   },
   wish: {
     warm: {
       headline: [
         (c) => (c.occasionName ? `${c.occasionName} shubhakankshalu` : null),
-        (c) => (c.subject ? `${c.subject} shubhakankshalu` : null),
+        (c) => (!c.occasionName && c.subject ? `${c.subject} shubhakankshalu` : null),
+        (c) => (!c.occasionName && !c.subject ? "Mee andariki shubhakankshalu" : null),
       ],
       subline: [
         (c) => (c.shopName ? `${c.shopName} tarapuna` : null),
-        () => "Mee andariki shubhakankshalu",
+        (c) => (!c.shopName ? "Mee andariki shubhakankshalu" : null),
       ],
     },
     direct: {
-      headline: [(c) => (c.occasionName ? `Happy ${c.occasionName}` : null)],
+      headline: [
+        (c) => (c.occasionName ? `Happy ${c.occasionName}` : null),
+        (c) => (!c.occasionName ? "Shubhakankshalu" : null),
+      ],
       subline: [(c) => (c.shopName ? c.shopName : null)],
     },
     short: {
-      headline: [(c) => (c.occasionName ? `${c.occasionName} shubhakankshalu` : null)],
+      headline: [
+        (c) => (c.occasionName ? `${c.occasionName} shubhakankshalu` : null),
+        (c) => (!c.occasionName ? "Shubhakankshalu" : null),
+      ],
       subline: [(c) => (c.shopName ? c.shopName : null)],
     },
   },
   announce: {
     warm: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "Kotthaga vachindi"],
-      subline: [(c) => (c.details ? c.details : null), () => "Okasari vachi chudandi"],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "Kotthaga vachindi" : null),
+      ],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details ? "Okasari vachi chudandi" : null),
+      ],
     },
     direct: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "Ippudu open"],
-      subline: [(c) => (c.details ? c.details : null)],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "Ippudu open" : null),
+      ],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details && c.shopName ? `${c.shopName} lo` : null),
+      ],
     },
     short: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "Kotthaga"],
-      subline: [(c) => (c.details ? c.details : null)],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "Kotthaga" : null),
+      ],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details ? "Randi" : null),
+      ],
     },
   },
 };
@@ -474,63 +568,91 @@ const TELUGU: AngleBank = {
     warm: {
       headline: [
         (c) => (c.occasionName ? `${c.occasionName} ప్రత్యేకం` : null),
-        () => "మీ కోసం ప్రత్యేక ఆఫర్",
+        (c) => (c.occasionName ? `${c.occasionName} ప్రత్యేక ఆఫర్` : null),
+        (c) => (!c.occasionName && c.subject ? cap(c.subject) : null),
+        (c) => (!c.occasionName && !c.subject ? "మీ కోసం ప్రత్యేక ఆఫర్" : null),
       ],
       subline: [
-        (c) => (c.offerText ? `${cap(c.offerText)}${c.validity ? `, ${c.validity}` : ""}` : null),
-        () => "ఈ అవకాశం వదులుకోకండి",
+        (c) => (c.offer.item ? `${c.offer.item} పై${c.validity ? `, ${c.validity}` : ""}` : null),
+        (c) => (!c.offer.item && c.details ? c.details : null),
+        (c) => (!c.offer.item && !c.details ? "స్టాక్ ఉన్నంత వరకే" : null),
       ],
     },
     direct: {
       headline: [
-        (c) => (c.offerText ? cap(c.offerText) : null),
         (c) => (c.occasionName ? `${c.occasionName} ఆఫర్` : null),
-        () => "ప్రత్యేక ఆఫర్",
+        (c) => (!c.occasionName && c.subject ? cap(c.subject) : null),
+        (c) => (!c.occasionName && !c.subject ? "ప్రత్యేక ఆఫర్" : null),
       ],
       subline: [
         (c) => (c.validity ? cap(c.validity) : null),
-        (c) => (c.details ? c.details : null),
+        (c) => (!c.validity && c.offer.item ? `${c.offer.item} పై` : null),
+        (c) => (!c.validity && !c.offer.item && c.details ? c.details : null),
+        (c) => (!c.validity && !c.offer.item && !c.details ? "ఈ అవకాశం వదులుకోకండి" : null),
       ],
     },
     short: {
       headline: [
-        (c) => (c.occasionName ? `${c.occasionName} ఆఫర్` : null),
-        () => "ఈ వారం మాత్రమే",
+        (c) => (c.occasionName ? `${c.occasionName} శుభాకాంక్షలు` : null),
+        (c) => (!c.occasionName ? "ఈ వారం మాత్రమే" : null),
       ],
-      subline: [(c) => (c.shopName ? c.shopName : null)],
+      subline: [
+        (c) => (c.validity ? cap(c.validity) : null),
+        (c) => (!c.validity && c.shopName ? c.shopName : null),
+        (c) => (!c.validity && !c.shopName ? "కొన్ని రోజులు మాత్రమే" : null),
+      ],
     },
   },
   wish: {
     warm: {
       headline: [
         (c) => (c.occasionName ? `${c.occasionName} శుభాకాంక్షలు` : null),
-        (c) => (c.subject ? `${c.subject} శుభాకాంక్షలు` : null),
+        (c) => (!c.occasionName && c.subject ? `${c.subject} శుభాకాంక్షలు` : null),
+        (c) => (!c.occasionName && !c.subject ? "మీ అందరికీ శుభాకాంక్షలు" : null),
       ],
       subline: [
         (c) => (c.shopName ? `${c.shopName} తరపున` : null),
-        () => "మీ అందరికీ శుభాకాంక్షలు",
+        (c) => (!c.shopName ? "మీ అందరికీ శుభాకాంక్షలు" : null),
       ],
     },
     direct: {
-      headline: [(c) => (c.occasionName ? `${c.occasionName} శుభాకాంక్షలు` : null)],
+      headline: [
+        (c) => (c.occasionName ? `${c.occasionName} శుభాకాంక్షలు` : null),
+        (c) => (!c.occasionName ? "శుభాకాంక్షలు" : null),
+      ],
       subline: [(c) => (c.shopName ? c.shopName : null)],
     },
     short: {
-      headline: [(c) => (c.occasionName ? `శుభ ${c.occasionName}` : null)],
+      headline: [
+        (c) => (c.occasionName ? `శుభ ${c.occasionName}` : null),
+        (c) => (!c.occasionName ? "శుభాకాంక్షలు" : null),
+      ],
       subline: [(c) => (c.shopName ? c.shopName : null)],
     },
   },
   announce: {
     warm: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "కొత్తగా వచ్చింది"],
-      subline: [(c) => (c.details ? c.details : null), () => "ఒకసారి వచ్చి చూడండి"],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "కొత్తగా వచ్చింది" : null),
+      ],
+      subline: [
+        (c) => (c.details ? c.details : null),
+        (c) => (!c.details ? "ఒకసారి వచ్చి చూడండి" : null),
+      ],
     },
     direct: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "ఇప్పుడు అందుబాటులో"],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "ఇప్పుడు అందుబాటులో" : null),
+      ],
       subline: [(c) => (c.details ? c.details : null)],
     },
     short: {
-      headline: [(c) => (c.subject ? cap(c.subject) : null), () => "కొత్తగా"],
+      headline: [
+        (c) => (c.subject ? cap(c.subject) : null),
+        (c) => (!c.subject ? "కొత్తగా" : null),
+      ],
       subline: [(c) => (c.details ? c.details : null)],
     },
   },
@@ -697,14 +819,16 @@ function localWriteCopy(request: CopyRequest): Promise<CopyOption[]> {
   const count = request.count ?? 3;
 
   const angle = angleFor(brief, occasion);
-  const offering = hasOffer(brief.offer);
 
   const ctx: Ctx = {
-    occasionName: occasion?.name ?? "",
+    // Telugu copy names the festival in Telugu script where it has a name
+    // there - "దీపావళి శుభాకాంక్షలు", not "Diwali శుభాకాంక్షలు".
+    occasionName:
+      language === "telugu" && occasion && "name_te" in occasion && occasion.name_te
+        ? occasion.name_te
+        : (occasion?.name ?? ""),
     shopName: brand.shop_name.trim(),
     offer: brief.offer,
-    offering,
-    offerText: offering ? offerSentence(brief.offer) : "",
     details: brief.details.trim(),
     subject: brief.subject.trim(),
     validity: validityPhrase(brief.valid_until),

@@ -18,8 +18,8 @@ export default async function NewPosterPage({
     <NewPosterView
       occasionId={one(params.occasion)}
       subject={one(params.subject)}
-      date={one(params.date)}
       kind={one(params.kind)}
+      designId={one(params.design)}
     />
   );
 }

@@ -332,7 +332,11 @@ export type PosterStyle =
   | "clean_minimal"
   | "warm_traditional"
   | "modern_dark"
-  | "playful_bright";
+  | "playful_bright"
+  | "royal_purple"
+  | "sky_blue"
+  | "emerald_gold"
+  | "rose_pink";
 
 export const POSTER_STYLES: { value: PosterStyle; label: string; hint: string }[] = [
   { value: "festive_gold", label: "Festive", hint: "Gold on deep red" },
@@ -341,6 +345,10 @@ export const POSTER_STYLES: { value: PosterStyle; label: string; hint: string }[
   { value: "warm_traditional", label: "Traditional", hint: "Turmeric and maroon" },
   { value: "modern_dark", label: "Dark", hint: "Charcoal, understated" },
   { value: "playful_bright", label: "Playful", hint: "Bright, rounded" },
+  { value: "royal_purple", label: "Royal", hint: "Gold on purple" },
+  { value: "sky_blue", label: "Sky", hint: "Kite-day blue" },
+  { value: "emerald_gold", label: "Emerald", hint: "Gold on green" },
+  { value: "rose_pink", label: "Rose", hint: "Deep pink, soft gold" },
 ];
 
 /**
@@ -425,6 +433,58 @@ export type PosterOverlay =
 export type PosterPatternId = "rays" | "mandala" | "confetti" | "diagonal" | "plain";
 
 /**
+ * Festive art, drawn in code.
+ *
+ * Every one of these is an original vector drawing - lamps, garlands, kites -
+ * rather than a picture copied from somewhere. That is what lets them recolour
+ * with the palette, stay sharp at any size, and belong to the product.
+ *
+ * Decor sits between the background and the words. Each kind declares how much
+ * of the frame it occupies, and the layout moves the text out of its way, so a
+ * garland across the top can never land on the headline.
+ */
+export type DecorKind =
+  | "diya_row"
+  | "marigold_toran"
+  | "rangoli_corners"
+  | "fireworks"
+  | "bunting"
+  | "kites"
+  | "string_lights"
+  | "gold_frame"
+  | "crescent_lanterns"
+  | "floral_corners"
+  | "sparkles"
+  | "bokeh"
+  | "soft_circles";
+
+export type PosterDecor = { kind: DecorKind };
+
+/**
+ * A photo the owner uploaded, used as the background.
+ *
+ * `src` is an `idb:` reference into IndexedDB rather than a data URL. A phone
+ * photo is a few hundred kilobytes even after downscaling, and localStorage
+ * holds about five megabytes for everything - a dozen photo posters would fill
+ * it. The design keeps a small pointer; the pixels live where there is room.
+ */
+export type PosterPhoto = {
+  src: string;
+  /** Where to aim when the photo is cropped to the poster's shape. 0..1. */
+  focus: { x: number; y: number };
+  /** How strongly the photo is dimmed so the words on it stay readable. */
+  strength: PhotoStrength;
+};
+
+export type PhotoStrength = "vivid" | "balanced" | "muted";
+
+export const PHOTO_STRENGTHS: { value: PhotoStrength; label: string; hint: string; alpha: number }[] = [
+  { value: "vivid", label: "Vivid", hint: "More photo", alpha: 0.32 },
+  { value: "balanced", label: "Balanced", hint: "Recommended", alpha: 0.5 },
+  { value: "muted", label: "Muted", hint: "Easiest to read", alpha: 0.68 },
+];
+
+/**
  * A union from day one, painted by paintBackground() before any template
  * draws, so no template ever touches the background itself. That is what lets
  * a generated image arrive later as just another `kind` with nothing else
@@ -470,6 +530,11 @@ export type PosterDesign = {
     accentColor: string | null;
   };
   background: PosterBackground;
+  /**
+   * Festive art between the background and the words. Optional so that designs
+   * saved before decor existed still open exactly as they were.
+   */
+  decor?: PosterDecor[];
   photo: PosterImageRef | null;
 };
 
@@ -501,6 +566,10 @@ export type PosterPost = {
   design: PosterDesign;
   /** ~320px JPEG, for the library grid only. Nullable - it is regenerable. */
   thumbnail_data_url: string | null;
+  /** Which gallery design it started from. Absent on posters made before the gallery. */
+  design_id?: string | null;
+  /** The owner's own photo behind it, if they used one. */
+  photo?: PosterPhoto | null;
 };
 
 /**

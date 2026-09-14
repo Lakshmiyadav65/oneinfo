@@ -66,7 +66,15 @@ export function BriefForm({
           <OccasionChip
             label="No occasion"
             selected={!brief.occasion_id}
-            onSelect={() => set({ occasion_id: null })}
+            onSelect={() =>
+              set({
+                occasion_id: null,
+                // The festival's own name was filled in as the subject when it
+                // was picked; left behind, it would become the headline of a
+                // poster that no longer has a festival.
+                subject: selected && brief.subject === selected.name ? "" : brief.subject,
+              })
+            }
           />
           {shown.map(({ occasion, date }) => (
             <OccasionChip
@@ -78,8 +86,13 @@ export function BriefForm({
               onSelect={() =>
                 set({
                   occasion_id: occasion.id,
-                  // The festival is the poster's subject unless they typed one.
-                  subject: brief.subject || occasion.name,
+                  // The festival is the poster's subject unless they typed one
+                  // of their own. The previous festival's name does not count
+                  // as typed - it was ours, filled in when that one was picked.
+                  subject:
+                    !brief.subject || (selected && brief.subject === selected.name)
+                      ? occasion.name
+                      : brief.subject,
                 })
               }
             />

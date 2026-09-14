@@ -7,13 +7,11 @@
  * has failed regardless of how good the rest of it looks.
  */
 
-import { band, safeBox, type PosterFrame, type PosterRegions } from "@/lib/poster/frame";
-import type { PosterSize } from "@/types/poster";
+import { band, type Box, type PosterFrame, type PosterRegions } from "@/lib/poster/frame";
 import type { PosterScene, PosterTemplate } from "@/lib/poster/template";
 import { drawBlock, drawBrandBar, drawCtaPill, drawOfferSlab, drawTerms } from "@/lib/poster/templates/parts";
 
-function regions(frame: PosterFrame, size: PosterSize): PosterRegions {
-  const safe = safeBox(frame, size);
+function regions(_frame: PosterFrame, safe: Box): PosterRegions {
   return {
     safe,
     headline: band(safe, 0, 0.14),

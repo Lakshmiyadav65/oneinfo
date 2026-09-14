@@ -24,15 +24,24 @@ export type PosterOutput = {
   height: number;
 };
 
+/** Ornaments made of soft light - glows, bokeh, flames. Photo-like, as far as a codec is concerned. */
+const SOFT_LIGHT = new Set(["bokeh", "diya_row", "string_lights", "crescent_lanterns", "fireworks"]);
+
 /**
- * PNG, except over a photograph.
+ * PNG for flat colour, JPEG for anything photo-like.
  *
- * A flat-colour poster is both smaller and crisper as a PNG. A 1080x1920
- * poster over a photo is a three-to-five megabyte PNG, which matters on a shop
- * connection, and JPEG is indistinguishable at that size.
+ * A flat poster is both smaller and crisper as a PNG. But a photo, or the soft
+ * glow around a row of lamps, is exactly what PNG compresses worst: the Diwali
+ * design came out at 1.3 MB as a PNG and a fraction of that as a JPEG, with no
+ * visible difference at this size. That matters on a shop's connection, and
+ * it costs nothing in the end, because WhatsApp and Instagram re-encode every
+ * upload to JPEG anyway - a PNG's crisper edges never survive the post.
  */
 function formatFor(design: PosterDesign): { type: string; quality: number; ext: string } {
-  return design.background.kind === "image"
+  const photoLike =
+    design.background.kind === "image" ||
+    (design.decor ?? []).some((item) => SOFT_LIGHT.has(item.kind));
+  return photoLike
     ? { type: "image/jpeg", quality: 0.92, ext: "jpg" }
     : { type: "image/png", quality: 1, ext: "png" };
 }
@@ -120,13 +129,22 @@ export async function renderPosterToBlob(
  * Stored, unlike the poster itself - but disposable: the record holds the
  * design, so a missing thumbnail is regenerated rather than lost.
  */
-export async function renderThumbnail(design: PosterDesign, maxEdge = 320): Promise<string | null> {
+export async function renderThumbnail(
+  design: PosterDesign,
+  maxEdge = 320,
+  /** Shared across a gallery, so twelve thumbnails decode the owner's photo once. */
+  assets?: PosterImageStore
+): Promise<string | null> {
   try {
     const { width, height } = sizePixels(design.sizeId);
     const scale = maxEdge / Math.max(width, height);
     const stacks = resolveFontStacks();
 
-    const store = new PosterImageStore();
+    // Small, but still text: a thumbnail drawn before the font arrives shows the
+    // owner a different typeface from the poster they will actually get.
+    await ensurePosterFonts(fontRequestsFor(posterText(design), stacks));
+
+    const store = assets ?? new PosterImageStore();
     await store.loadAll(posterImageSources(design));
     try {
       const canvas = document.createElement("canvas");
@@ -141,9 +159,9 @@ export async function renderThumbnail(design: PosterDesign, maxEdge = 320): Prom
         purpose: "preview",
         stacks,
       });
-      return canvas.toDataURL("image/jpeg", 0.7);
+      return canvas.toDataURL("image/jpeg", 0.8);
     } finally {
-      await store.releaseAll();
+      if (!assets) await store.releaseAll();
     }
   } catch {
     // A thumbnail is a convenience. Losing one must never fail a save.

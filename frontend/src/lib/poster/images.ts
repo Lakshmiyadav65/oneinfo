@@ -8,6 +8,7 @@
  */
 
 import type { PosterImageRef } from "@/types/poster";
+import { getPhoto, isStoredPhoto } from "@/lib/poster/photo-store";
 
 export type PosterAssets = {
   get(ref: PosterImageRef | null | undefined): HTMLImageElement | undefined;
@@ -73,7 +74,7 @@ export class PosterImageStore implements PosterAssets {
     const inFlight = this.pending.get(src);
     if (inFlight) return inFlight;
 
-    const promise = loadImage(src)
+    const promise = this.resolve(src)
       .then((img) => {
         this.images.set(src, img);
         this.pending.delete(src);
@@ -86,6 +87,24 @@ export class PosterImageStore implements PosterAssets {
 
     this.pending.set(src, promise);
     return promise;
+  }
+
+  /**
+   * Turns a design's reference into a decoded image.
+   *
+   * `idb:` references are read out of IndexedDB and given an object URL this
+   * store owns. The URL is kept until releaseAll rather than revoked as soon as
+   * the image decodes: browsers are allowed to throw away decoded pixels of an
+   * image that is not in the DOM and decode again later, and a revoked URL
+   * turns that second decode into a blank photo.
+   */
+  private async resolve(src: string): Promise<HTMLImageElement> {
+    if (!isStoredPhoto(src)) return loadImage(src);
+    const blob = await getPhoto(src);
+    if (!blob) throw new Error("That photo is no longer on this device.");
+    const url = URL.createObjectURL(blob);
+    this.owned.add(url);
+    return loadImage(url);
   }
 
   /** Loads everything a design needs, ignoring the ones that fail. */
@@ -150,6 +169,58 @@ export async function fileToLogoDataUrl(file: File): Promise<string> {
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(img, 0, 0, width, height);
     return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(src);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Reading a photo the owner picked
+ * ------------------------------------------------------------------ */
+
+export const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+
+/**
+ * A picked photo, downscaled and re-encoded, ready to store.
+ *
+ * 1920 on the long edge covers the tallest poster (a 1080x1920 status) without
+ * upscaling, and a full-resolution phone photo is four times that and several
+ * megabytes for no visible gain. JPEG because photos are what JPEG is for, and
+ * an HTMLImageElement decode because it honours the EXIF rotation phones
+ * write - createImageBitmap has not always, which is how a portrait photo ends
+ * up lying on its side.
+ */
+export async function fileToPhotoBlob(file: File): Promise<Blob> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("That file isn't a photo. Please pick a JPG or PNG.");
+  }
+  if (file.size > MAX_PHOTO_BYTES) {
+    throw new Error("That photo is too large. Please pick one under 20 MB.");
+  }
+
+  const src = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(src);
+    const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
+    const scale = Math.min(1, 1920 / longEdge);
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("This browser couldn't prepare that photo.");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, width, height);
+
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("That photo couldn't be read."))),
+        "image/jpeg",
+        0.85
+      );
+    });
   } finally {
     URL.revokeObjectURL(src);
   }

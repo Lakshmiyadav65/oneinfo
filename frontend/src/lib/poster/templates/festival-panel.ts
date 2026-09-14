@@ -6,13 +6,11 @@
  * has no offer slab at all rather than an empty one.
  */
 
-import { band, roundRectPath, safeBox, type PosterFrame, type PosterRegions } from "@/lib/poster/frame";
-import type { PosterSize } from "@/types/poster";
+import { band, roundRectPath, type Box, type PosterFrame, type PosterRegions } from "@/lib/poster/frame";
 import type { PosterScene, PosterTemplate } from "@/lib/poster/template";
 import { drawBlock, drawBrandBar, drawCtaPill } from "@/lib/poster/templates/parts";
 
-function regions(frame: PosterFrame, size: PosterSize): PosterRegions {
-  const safe = safeBox(frame, size);
+function regions(_frame: PosterFrame, safe: Box): PosterRegions {
   return {
     safe,
     headline: band(safe, 0.08, 0.46),

@@ -15,6 +15,8 @@
 import type { PosterDesign } from "@/types/poster";
 import type { PosterAssets } from "@/lib/poster/images";
 import { paintBackground } from "@/lib/poster/background";
+import { decorInsets, paintDecor, shrinkForDecor } from "@/lib/poster/decor";
+import { safeBox } from "@/lib/poster/frame";
 import { resetMeasureCache } from "@/lib/poster/text";
 import { resolveStyle } from "@/lib/poster/styles";
 import { templateFor } from "@/lib/poster/templates";
@@ -96,7 +98,14 @@ export function renderPoster(
   // Always before the template, and always opaque. A PNG with transparent
   // corners sits on black in one app and white in another, and the owner only
   // finds out after they have posted it.
-  paintBackground(ctx, design.background, frame, assets);
+  paintBackground(ctx, design.background, frame, assets, resolved.base);
+
+  // Art between the background and the words. The text area is shrunk by how
+  // far the art reaches before any template lays anything out, which is what
+  // keeps a garland off the headline without the template knowing about it.
+  const decor = design.decor ?? [];
+  paintDecor(ctx, decor, frame, resolved);
+  const safe = shrinkForDecor(safeBox(frame, design.sizeId), decorInsets(decor, frame), frame);
 
   if (design.background.kind === "image" && !assets.get(design.background.image)) {
     report.missing.push("background");
@@ -106,7 +115,7 @@ export function renderPoster(
     design,
     assets,
     frame,
-    regions: template.regions(frame, design.sizeId),
+    regions: template.regions(frame, safe),
     style: resolved,
     target,
     report,

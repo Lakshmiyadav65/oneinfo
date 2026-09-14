@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Download, Save, Share2 } from "lucide-react";
 import {
   DEFAULT_BRIEF,
+  offerLines,
   type PosterBrief,
   type PosterCopy,
+  type PosterPhoto,
   type PosterPost,
   type PosterSize,
   type PosterStyle,
@@ -14,13 +16,21 @@ import {
 import { occasionById, occasionDate } from "@/lib/poster/occasions";
 import { captionFor, hashtagsFor, writeCopy, type CopyOption } from "@/lib/poster/copy";
 import { buildDesign } from "@/lib/poster/design";
+import {
+  designsFor,
+  galleryDesignById,
+  suggestDesign,
+  type GalleryDesign,
+} from "@/lib/poster/gallery";
 import { renderPosterToBlob, renderThumbnail, type PosterOutput } from "@/lib/poster/export";
-import { loadDraft, saveDraft } from "@/lib/poster/storage";
+import { forgetPhotoIfUnused, loadDraft, saveDraft } from "@/lib/poster/storage";
 import { useBrandProfile } from "@/hooks/useBrandProfile";
 import { usePosterLibrary } from "@/hooks/usePosterLibrary";
 import { BriefForm } from "@/components/poster/BriefForm";
 import { BrandKitForm } from "@/components/poster/BrandKitForm";
 import { CopyVariantPicker } from "@/components/poster/CopyVariantPicker";
+import { DesignGallery } from "@/components/poster/DesignGallery";
+import { PhotoPicker } from "@/components/poster/PhotoPicker";
 import { PosterPreview } from "@/components/poster/PosterPreview";
 import { ShareSheet } from "@/components/poster/ShareSheet";
 import { StyleSizePicker } from "@/components/poster/StyleSizePicker";
@@ -37,6 +47,14 @@ type Draft = {
   size: PosterSize;
   edits: { headline?: string; subline?: string };
   variantId: string | null;
+  designId: string | null;
+  /**
+   * True once the owner has picked a design themselves. Until then the design
+   * follows the occasion - choose Diwali and the lamps appear - and after it,
+   * changing the occasion leaves their choice alone.
+   */
+  designChosen: boolean;
+  photo: PosterPhoto | null;
 };
 
 const DEFAULT_DRAFT: Draft = {
@@ -45,7 +63,29 @@ const DEFAULT_DRAFT: Draft = {
   size: "square",
   edits: {},
   variantId: null,
+  designId: null,
+  designChosen: false,
+  photo: null,
 };
+
+export type ComposerPrefill = {
+  /** Only the brief fields that actually arrived in the link. */
+  brief?: Partial<PosterBrief>;
+  designId?: string | null;
+};
+
+function draftFromPost(post: PosterPost): Draft {
+  return {
+    brief: post.brief,
+    style: post.style,
+    size: post.size,
+    edits: { headline: post.copy.headline, subline: post.copy.subline },
+    variantId: post.copy_variant_id,
+    designId: post.design_id ?? null,
+    designChosen: true,
+    photo: post.photo ?? null,
+  };
+}
 
 /**
  * Making a poster: one screen, two columns.
@@ -53,8 +93,8 @@ const DEFAULT_DRAFT: Draft = {
  * Deliberately not a wizard. The video flow is stepped because each step there
  * costs a model call that cannot be taken back; here every input is instant
  * and free, so steps would only hide the preview that makes the choices mean
- * anything. Someone should be able to type an offer and watch the poster
- * change as they do.
+ * anything. Someone should be able to tap a design, type an offer, and watch
+ * the poster change as they do.
  */
 export function PosterComposer({
   postId,
@@ -62,7 +102,7 @@ export function PosterComposer({
 }: {
   /** Set when reopening a saved poster; null while it is still a draft. */
   postId: string | null;
-  prefill?: Partial<PosterBrief> & { style?: PosterStyle };
+  prefill?: ComposerPrefill;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -90,50 +130,56 @@ export function PosterComposer({
     if (postId) {
       const post = library.status === "success" ? library.data.find((p) => p.id === postId) : null;
       if (post) {
-        setDraft({
-          brief: post.brief,
-          style: post.style,
-          size: post.size,
-          edits: { headline: post.copy.headline, subline: post.copy.subline },
-          variantId: post.copy_variant_id,
-        });
+        setDraft(draftFromPost(post));
         setReady(true);
       }
       return;
     }
 
-    const stored = loadDraft<Draft>();
+    const stored = loadDraft<Partial<Draft>>();
+    const brief: PosterBrief = {
+      ...DEFAULT_BRIEF,
+      ...(stored?.brief ?? {}),
+      ...(prefill?.brief ?? {}),
+    };
+
+    // A link that names a design, an occasion or a kind is a deliberate
+    // starting point, and wins over whatever was left in the draft. A bare
+    // "new poster" carries on where the draft left off.
+    const pickedInLink = galleryDesignById(prefill?.designId);
+    const deliberate = Boolean(pickedInLink || prefill?.brief?.occasion_id || prefill?.brief?.kind);
+    const gallery =
+      pickedInLink ??
+      (deliberate ? null : galleryDesignById(stored?.designId)) ??
+      suggestDesign(brief.occasion_id, brief.kind);
+
     setDraft({
       ...DEFAULT_DRAFT,
       ...(stored ?? {}),
-      brief: { ...DEFAULT_BRIEF, ...(stored?.brief ?? {}), ...(prefill ?? {}) },
-      ...(prefill?.style ? { style: prefill.style } : {}),
+      brief,
+      designId: gallery.id,
+      designChosen: pickedInLink ? true : deliberate ? false : Boolean(stored?.designChosen),
+      style: deliberate || !stored?.style ? gallery.styleId : stored.style,
+      photo: stored?.photo ?? null,
     });
     setReady(true);
     // Runs once. `library` settles after this and is read again below when a
     // saved poster is being reopened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // A saved poster may not be in the library yet on the first pass.
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!postId || ready || library.status !== "success") return;
     const post = library.data.find((p) => p.id === postId);
     if (!post) return;
-    setDraft({
-      brief: post.brief,
-      style: post.style,
-      size: post.size,
-      edits: { headline: post.copy.headline, subline: post.copy.subline },
-      variantId: post.copy_variant_id,
-    });
+    setDraft(draftFromPost(post));
     setReady(true);
   }, [postId, ready, library]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const occasion = draft.brief.occasion_id ? occasionById(draft.brief.occasion_id) : null;
+  const gallery = galleryDesignById(draft.designId);
 
   // What the copywriter actually reads. Serialised so the effect fires on a
   // real change rather than on every render of a new object identity.
@@ -224,8 +270,62 @@ export function PosterComposer({
       size: draft.size,
       language: brand.language,
       occasion,
+      gallery,
+      photo: draft.photo,
     });
-  }, [copy, draft.brief, draft.style, draft.size, brand, occasion]);
+  }, [copy, draft.brief, draft.style, draft.size, draft.photo, brand, occasion, gallery]);
+
+  /**
+   * Each design in the strip, drawn with this poster's real words.
+   *
+   * Every design shows in its own palette except the one already chosen, which
+   * shows in the palette the owner has actually picked - otherwise the
+   * highlighted thumbnail and the big preview beside it would disagree.
+   */
+  const designForGallery = (candidate: GalleryDesign) =>
+    buildDesign({
+      brief: draft.brief,
+      copy: copy ?? { headline: "", subline: "", cta_label: "", caption: "", hashtags: [] },
+      brand,
+      style: candidate.id === draft.designId ? draft.style : candidate.styleId,
+      size: draft.size,
+      language: brand.language,
+      occasion,
+      gallery: candidate,
+      photo: draft.photo,
+    });
+
+  const galleryKey = JSON.stringify([
+    copy?.headline,
+    copy?.subline,
+    copy?.cta_label,
+    offerLines(draft.brief.offer),
+    draft.brief.offer.min_purchase,
+    draft.brief.kind,
+    draft.brief.occasion_id,
+    draft.size,
+    draft.style,
+    draft.designId,
+    draft.photo,
+    brand.shop_name,
+    brand.phone,
+    brand.logo_data_url ? brand.logo_data_url.length : 0,
+    brand.language,
+  ]);
+
+  const chooseDesign = (next: GalleryDesign) => {
+    setDraft((d) => ({ ...d, designId: next.id, style: next.styleId, designChosen: true }));
+  };
+
+  const changePhoto = (next: PosterPhoto | null) => {
+    const previous = draft.photo;
+    const updated = { ...draft, photo: next };
+    setDraft(updated);
+    // Written straight away rather than on the autosave timer, so the cleanup
+    // below does not find the old photo still referenced by the draft.
+    if (!postId) saveDraft(updated);
+    if (previous && previous.src !== next?.src) void forgetPhotoIfUnused(previous.src);
+  };
 
   // Set once a draft has been written under a real id, so the URL can be
   // swapped over at a moment that does not tear the screen down.
@@ -251,6 +351,8 @@ export function PosterComposer({
         copy_variant_id: draft.variantId ?? "",
         design,
         thumbnail_data_url: await renderThumbnail(design),
+        design_id: draft.designId,
+        photo: draft.photo,
       };
 
       const result = library.save(post);
@@ -265,6 +367,11 @@ export function PosterComposer({
         });
         return null;
       }
+
+      // The photo this poster used to have is now free, unless another poster
+      // or the open draft still shows it.
+      const replaced = existing?.photo?.src;
+      if (replaced && replaced !== draft.photo?.src) void forgetPhotoIfUnused(replaced);
 
       if (!savedId) {
         setSavedId(id);
@@ -343,14 +450,51 @@ export function PosterComposer({
         />
       </div>
 
-      <div className="order-2 space-y-6 lg:order-1">
+      <div className="order-2 min-w-0 space-y-6 lg:order-1">
+        <Card>
+          <CardContent className="space-y-4 pt-5">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Pick a design</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {gallery
+                  ? `${gallery.name} - ${gallery.description.toLowerCase()}. Every word stays editable.`
+                  : "Every word stays editable, whichever you pick."}
+              </p>
+            </div>
+            <DesignGallery
+              layout="strip"
+              designs={designsFor(draft.brief.occasion_id)}
+              makeDesign={designForGallery}
+              renderKey={galleryKey}
+              size={draft.size}
+              selectedId={draft.designId}
+              onSelect={chooseDesign}
+            />
+            <PhotoPicker photo={draft.photo} onChange={changePhoto} />
+          </CardContent>
+        </Card>
+
         <Card>
           <CardContent className="pt-5">
             <BriefForm
               brief={draft.brief}
               category={brand.category}
               today={today}
-              onChange={(brief) => setDraft((d) => ({ ...d, brief }))}
+              onChange={(brief) =>
+                setDraft((d) => {
+                  const next = { ...d, brief };
+                  const moved =
+                    brief.occasion_id !== d.brief.occasion_id || brief.kind !== d.brief.kind;
+                  // Follow the occasion until the owner has picked a design of
+                  // their own; never overrule a choice they made.
+                  if (moved && !d.designChosen) {
+                    const suggested = suggestDesign(brief.occasion_id, brief.kind);
+                    next.designId = suggested.id;
+                    next.style = suggested.styleId;
+                  }
+                  return next;
+                })
+              }
             />
           </CardContent>
         </Card>

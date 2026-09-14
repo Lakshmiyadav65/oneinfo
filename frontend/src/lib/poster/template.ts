@@ -7,9 +7,9 @@
  * that loop.
  */
 
-import type { PosterDesign, PosterImageSlot, PosterSize, PosterTemplateId } from "@/types/poster";
+import type { PosterDesign, PosterImageSlot, PosterTemplateId } from "@/types/poster";
 import type { PosterAssets } from "@/lib/poster/images";
-import type { PosterFrame, PosterRegions } from "@/lib/poster/frame";
+import type { Box, PosterFrame, PosterRegions } from "@/lib/poster/frame";
 import type { PosterFontStacks } from "@/lib/poster/fonts";
 import type { ResolvedStyle } from "@/lib/poster/styles";
 
@@ -57,7 +57,12 @@ export type PosterScene = {
 export type PosterTemplate = {
   id: PosterTemplateId;
   label: string;
-  /** Regions are a function of the frame, so one template serves every size. */
-  regions(frame: PosterFrame, size: PosterSize): PosterRegions;
+  /**
+   * Regions are laid out inside `safe`, which the renderer has already shrunk
+   * for the platform's own chrome and for any decor. A template never works
+   * out margins itself, so a garland added to a design moves every template's
+   * text out of its way without any template knowing garlands exist.
+   */
+  regions(frame: PosterFrame, safe: Box): PosterRegions;
   draw(ctx: CanvasRenderingContext2D, scene: PosterScene): void;
 };

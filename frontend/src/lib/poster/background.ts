@@ -15,6 +15,7 @@
 import type { PosterBackground, PosterOverlay, PosterPatternId } from "@/types/poster";
 import type { PosterAssets } from "@/lib/poster/images";
 import { coverRect, type Box, type PosterFrame } from "@/lib/poster/frame";
+import { withAlpha } from "@/lib/poster/color";
 
 function fullBox(frame: PosterFrame): Box {
   return { x: 0, y: 0, width: frame.width, height: frame.height };
@@ -30,7 +31,9 @@ export function paintBackground(
   ctx: CanvasRenderingContext2D,
   background: PosterBackground,
   frame: PosterFrame,
-  assets: PosterAssets
+  assets: PosterAssets,
+  /** What shows while a photo is still loading - the palette's own ground. */
+  fallback = "#111827"
 ): void {
   const box = fullBox(frame);
 
@@ -71,7 +74,7 @@ export function paintBackground(
       if (!img) {
         // The image has not decoded yet, or failed. Something opaque still has
         // to be here, or the export carries transparent pixels.
-        ctx.fillStyle = "#111827";
+        ctx.fillStyle = fallback;
         ctx.fillRect(0, 0, frame.width, frame.height);
         return;
       }
@@ -110,14 +113,6 @@ function paintOverlay(
   gradient.addColorStop(1, withAlpha(overlay.color, overlay.to));
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, frame.width, frame.height);
-}
-
-function withAlpha(hex: string, alpha: number): string {
-  const clean = hex.replace("#", "").slice(0, 6);
-  const r = parseInt(clean.slice(0, 2), 16) || 0;
-  const g = parseInt(clean.slice(2, 4), 16) || 0;
-  const b = parseInt(clean.slice(4, 6), 16) || 0;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 /* ------------------------------------------------------------------ *

@@ -10,13 +10,11 @@
  * something new very often attaches an opening discount to it.
  */
 
-import { band, safeBox, type PosterFrame, type PosterRegions } from "@/lib/poster/frame";
-import type { PosterSize } from "@/types/poster";
+import { band, type Box, type PosterFrame, type PosterRegions } from "@/lib/poster/frame";
 import type { PosterScene, PosterTemplate } from "@/lib/poster/template";
 import { drawBlock, drawBrandBar, drawCtaPill, drawOfferSlab, drawTerms } from "@/lib/poster/templates/parts";
 
-function regions(frame: PosterFrame, size: PosterSize): PosterRegions {
-  const safe = safeBox(frame, size);
+function regions(_frame: PosterFrame, safe: Box): PosterRegions {
   return {
     safe,
     headline: band(safe, 0.04, 0.36),
@@ -32,7 +30,18 @@ function regions(frame: PosterFrame, size: PosterSize): PosterRegions {
 }
 
 function draw(ctx: CanvasRenderingContext2D, scene: PosterScene): void {
-  const { design, style, regions: r, frame } = scene;
+  const { design, style, frame } = scene;
+  const hasOfferBadge = design.content.offerBig.trim().length > 0;
+  // With no offer to badge, the words take the room the badge would have had,
+  // rather than leaving a hole the height of a slab between the news and the
+  // button.
+  const r = hasOfferBadge
+    ? scene.regions
+    : {
+        ...scene.regions,
+        headline: band(scene.regions.safe, 0.1, 0.5),
+        subline: band(scene.regions.safe, 0.52, 0.72),
+      };
 
   const headline = drawBlock(ctx, scene, "headline", {
     text: design.content.headline,
