@@ -84,18 +84,3 @@ export async function uploadAvatarCapture(payload: {
   form.append("angles", JSON.stringify(payload.angles));
   return api.postForm<FaceSetup>("/creators/me/face/capture", form);
 }
-
-/**
- * Re-cuts the reference frames from the capture already on file. Passing no
- * angles re-cuts at the moments the session originally measured.
- */
-export async function reextractFrames(angles?: ConfirmedAngle[]): Promise<FaceSetup> {
-  return api.post<FaceSetup>("/creators/me/face/recording/reextract", {
-    angles: angles ?? null,
-  });
-}
-
-/** Deletes the capture and keeps the frames cut from it. */
-export async function deleteAvatarRecording(): Promise<FaceSetup> {
-  return api.delete<FaceSetup>("/creators/me/face/recording");
-}

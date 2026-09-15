@@ -378,10 +378,6 @@ export function sizeLabel(size: PosterSize): string {
   return POSTER_SIZES.find((s) => s.value === size)?.label ?? "Post";
 }
 
-export function styleLabel(style: PosterStyle): string {
-  return POSTER_STYLES.find((s) => s.value === style)?.label ?? "Festive";
-}
-
 export function categoryLabel(category: BusinessCategory): string {
   return BUSINESS_CATEGORIES.find((c) => c.value === category)?.label ?? "Business";
 }

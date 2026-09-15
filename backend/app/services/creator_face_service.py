@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import io
 import uuid
 from datetime import UTC, datetime
@@ -136,10 +137,8 @@ async def delete_all_faces(db: AsyncSession, settings: Settings, creator_id: str
     for face in faces:
         # Best effort per file. A storage object that has already gone is not
         # a reason to leave the rows behind and the set half-replaced.
-        try:
+        with contextlib.suppress(Exception):
             await asyncio.to_thread(storage.delete, face.storage_key)
-        except Exception:
-            pass
         await db.delete(face)
     await db.commit()
 

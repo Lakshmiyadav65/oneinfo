@@ -358,7 +358,6 @@ export function StoryboardView({ projectId }: { projectId: string }) {
 
           <CreatorFacePrompt onChange={() => faceQuery.retry()} />
 
-
           {/*
             The project default, so a creator picks a look once rather than
             once per scene. New scenes inherit it; any scene can still

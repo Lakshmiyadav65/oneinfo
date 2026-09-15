@@ -48,7 +48,6 @@ type Props = {
   onSceneChanged?: () => void;
 };
 
-
 /**
  * The lengths the video model will actually render.
  *

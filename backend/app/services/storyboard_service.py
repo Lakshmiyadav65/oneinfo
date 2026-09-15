@@ -14,7 +14,7 @@ from app.agents.environment_prompt import (
 )
 from app.agents.qa_agent import run_qa_agent
 from app.agents.storyboard_agent import run_storyboard_agent
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationAppError
 from app.models.creator import Creator
 from app.models.project import Project, ProjectStatus
@@ -104,7 +104,6 @@ async def _rebuild_visual(
     check belongs to the caller, which knows whether the creator was asked.
     """
     creator = await db.get(Creator, creator_id)
-    settings = get_settings()
 
     # The language and the scene's position both belong in the prompt, and
     # neither is on the scene itself. These paths run when a creator edits a

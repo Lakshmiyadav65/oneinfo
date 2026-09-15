@@ -16,6 +16,7 @@ someone to film themselves again.
 """
 
 import asyncio
+import contextlib
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -314,11 +315,9 @@ async def _drop_recording(
     db: AsyncSession, settings: Settings, recording: CreatorRecording
 ) -> None:
     storage = get_storage_provider(settings)
-    try:
+    # A missing object is not a reason to keep a row pointing at it.
+    with contextlib.suppress(Exception):
         await asyncio.to_thread(storage.delete, recording.storage_key)
-    except Exception:
-        # A missing object is not a reason to keep a row pointing at it.
-        pass
     await db.delete(recording)
     await db.commit()
 

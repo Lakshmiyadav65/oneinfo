@@ -9,7 +9,6 @@ from app.db.session import get_db
 from app.models.creator import Creator
 from app.models.storyboard import Storyboard
 from app.schemas.storyboard import (
-    ProjectEnvironmentIn,
     SceneDialogueIn,
     SceneDurationIn,
     SceneEnvironmentIn,

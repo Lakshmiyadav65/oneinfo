@@ -73,7 +73,6 @@ class StitchReadinessOut(BaseModel):
     missing_scenes: list[int]
 
 
-
 class SceneVoiceOut(BaseModel):
     """
     What the voice pass produced, and whether the line actually fits.

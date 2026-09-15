@@ -289,10 +289,6 @@ function writePosts(posts: PosterPost[]): StorageResult {
   );
 }
 
-export function getPost(id: string): PosterPost | null {
-  return loadPosts().posts.find((p) => p.id === id) ?? null;
-}
-
 export function savePost(post: PosterPost): StorageResult {
   const { posts, unreadable } = loadPosts();
   // Refuse to write over something we could not read, rather than silently

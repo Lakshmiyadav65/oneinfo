@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import tempfile
 import uuid
 from collections.abc import Sequence
@@ -547,10 +548,8 @@ async def _discard_runs_beyond(
             continue
         # Best effort. A file that cannot be removed is an orphan taking up
         # space, which is not worth failing a paid run over.
-        try:
+        with contextlib.suppress(Exception):
             await asyncio.to_thread(storage.delete, asset.storage_key)
-        except Exception:
-            pass
         await db.delete(asset)
     await db.flush()
 

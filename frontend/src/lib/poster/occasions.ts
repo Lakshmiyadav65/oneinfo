@@ -446,10 +446,6 @@ export function occasionById(id: string): Occasion | null {
   return OCCASIONS.find((o) => o.id === id) ?? null;
 }
 
-export function beatById(id: string): BusinessBeat | null {
-  return BUSINESS_BEATS.find((b) => b.id === id) ?? null;
-}
-
 /** True when this year has no typed-in lunar dates, so the month will look thin. */
 export function needsDateRefresh(year: number): boolean {
   return !OCCASION_DATA_YEARS.includes(year as (typeof OCCASION_DATA_YEARS)[number]);

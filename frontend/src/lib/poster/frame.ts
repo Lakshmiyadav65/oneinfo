@@ -8,15 +8,11 @@
  * no template ever sees it.
  */
 
-import { sizePixels, type PosterSize } from "@/types/poster";
+import type { PosterSize } from "@/types/poster";
 
 export type PosterFrame = { width: number; height: number };
 
 export type Box = { x: number; y: number; width: number; height: number };
-
-export function frameFor(size: PosterSize): PosterFrame {
-  return sizePixels(size);
-}
 
 /**
  * How much of each edge the platform eats.
@@ -161,11 +157,3 @@ export function roundRectPath(
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
-
-/**
- * Nothing thinner than this.
- *
- * A one-unit hairline disappears at preview scale and then reappears in the
- * export, so the owner cannot see what they are about to download.
- */
-export const MIN_STROKE = 3;

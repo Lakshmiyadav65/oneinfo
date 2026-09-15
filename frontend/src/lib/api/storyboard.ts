@@ -80,7 +80,6 @@ export function setSceneInclusion(
   );
 }
 
-
 /**
  * How long this one clip runs. Null goes back to fitting the dialogue.
  *
@@ -98,7 +97,6 @@ export function setSceneDuration(
     { duration_seconds: durationSeconds }
   );
 }
-
 
 /**
  * Rewrites what one scene says.

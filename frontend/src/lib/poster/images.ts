@@ -14,9 +14,6 @@ export type PosterAssets = {
   get(ref: PosterImageRef | null | undefined): HTMLImageElement | undefined;
 };
 
-/** An assets bag with nothing in it, for previews before anything has loaded. */
-export const NO_ASSETS: PosterAssets = { get: () => undefined };
-
 async function loadImage(src: string): Promise<HTMLImageElement> {
   const img = new Image();
   img.decoding = "async";

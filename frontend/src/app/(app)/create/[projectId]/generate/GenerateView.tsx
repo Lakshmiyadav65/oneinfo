@@ -307,7 +307,6 @@ export function GenerateView({ projectId }: { projectId: string }) {
           <CardContent className="space-y-5 p-6">
             <GenerationProgress job={job ?? null} />
 
-
             {job?.status === "failed" && (
               <div className="space-y-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
                 <p className="text-sm text-foreground">{failureMessage(job)}</p>
