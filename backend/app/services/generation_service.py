@@ -822,11 +822,12 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             storage = get_storage_provider(settings)
             output = project_output_settings(project)
             render_inputs: list[Path] = []
-            # One entry per clip, in the same order. The line is drawn on
-            # b-roll only: a scene where the creator is on screen already
-            # has someone saying it, and printing it underneath them says
-            # the same thing twice.
-            captions: list[str | None] = []
+            # Nothing is drawn over any clip. B-roll used to carry its own
+            # line across the bottom - the thinking being that a shot with
+            # nobody in it benefits from the words - but on screen it reads
+            # as a subtitle nobody asked for, over footage already carrying
+            # that line in the creator's voice. render_final_video can still
+            # draw them; this is the caller deciding not to.
 
             if job.stitch_only:
                 # Never touches the video provider, which is the whole point:
@@ -852,13 +853,12 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                     local_path.write_bytes(clip_bytes)
                     temp_files.append(local_path)
                     render_inputs.append(local_path)
-                    captions.append(None if scene.features_creator else scene.voiceover)
                     job.scenes_completed = index
                     await db.commit()
 
                 await _finish_video(
                     db, settings, storage, job, project, render_inputs, output,
-                    temp_files, captions,
+                    temp_files,
                 )
                 return
 
@@ -1025,7 +1025,6 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 # Indexed locally: take_paths holds only this run's files,
                 # while selected_take counts from the scene's whole history.
                 render_inputs.append(take_paths[chosen])
-                captions.append(None if scene.features_creator else scene.voiceover)
                 await db.commit()
 
                 # B-roll came back silent - its prompt gave Veo nothing to say,
@@ -1067,7 +1066,7 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
 
             await _finish_video(
                 db, settings, storage, job, project, render_inputs, output,
-                temp_files, captions,
+                temp_files,
             )
         except Exception as exc:
             await db.rollback()
