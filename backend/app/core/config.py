@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     sarvam_tts_model: str = "bulbul:v3"
     # Lower case, and the API is strict about it.
     sarvam_speaker: str = "shubh"
+    # Generate b-roll with no speech and lay the Sarvam voice over it. Off:
+    # it keeps strangers out of b-roll by construction, but the voice then
+    # differs from the one Veo gives the creator on camera, and Sarvam reads
+    # romanised Tenglish as Telugu. Veo speaks every line instead, and b-roll
+    # with a face in it is regenerated (see generation_service._has_person).
+    silent_b_roll: bool = False
 
     # The other half of the Sarvam relationship: the voice says a line, this
     # reads one back. A creator who has no chat history to paste usually

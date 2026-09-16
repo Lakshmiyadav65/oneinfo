@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import logging
 import tempfile
 import uuid
 from collections.abc import Sequence
@@ -9,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.agents.environment_prompt import silence_prompt
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError, NotFoundError, ValidationAppError
 from app.db.base import get_session_factory
@@ -18,7 +20,12 @@ from app.models.generation_job import GenerationJob, JobStatus
 from app.models.project import Project, ProjectStatus
 from app.models.storyboard import Storyboard, StoryboardScene
 from app.models.video_output import VideoOutput
-from app.providers.ffmpeg_runner import FFmpegError, probe_duration_seconds
+from app.providers import face_detection
+from app.providers.ffmpeg_runner import (
+    FFmpegError,
+    probe_duration_seconds,
+    run_ffmpeg,
+)
 from app.providers.storage import get_storage_provider
 from app.providers.video import get_supported_durations, get_video_provider
 from app.providers.video.base import (
@@ -26,15 +33,23 @@ from app.providers.video.base import (
     VideoProvider,
     snap_duration,
 )
+from app.schemas.environment import Subject
 from app.schemas.export import ExportFormat, ExportRequest
 from app.schemas.output_settings import ModelTier, Resolution
-from app.services import creator_face_service, project_service, storyboard_service
+from app.services import (
+    creator_face_service,
+    creator_identity_service,
+    project_service,
+    storyboard_service,
+)
 from app.services.project_service import (
     export_size,
     output_size,
     project_output_settings,
 )
 from app.services.rendering_service import render_final_video
+
+logger = logging.getLogger(__name__)
 
 
 class GenerationError(AppError):
@@ -624,6 +639,109 @@ async def _finish_video(
     await db.commit()
 
 
+MAX_PERSON_RETRIES = 1
+
+
+def silent_request(
+    request: VideoGenerationRequest, visual_prompt: str
+) -> VideoGenerationRequest:
+    """
+    The same request with nothing spoken in the shot, for the retake of a
+    b-roll clip that came back with a person in it.
+
+    A function of its own because it was a one-line mistake in the middle of
+    the run loop - dataclasses.replace on what is a pydantic model - and it
+    only ran when a clip actually came back with someone in it, which is to
+    say after five scenes had already been generated and billed.
+    """
+    return request.model_copy(update={"visual_prompt": silence_prompt(visual_prompt)})
+
+
+async def _has_person(settings: Settings, video_bytes: bytes) -> bool:
+    """
+    Whether a clip has a face in it. A check that cannot run answers no:
+    it guards against a stranger in frame, and failing a paid run because
+    the guard broke would cost more than the stranger does.
+    """
+    path = Path(tempfile.gettempdir()) / f"oneinfo-facecheck-{uuid.uuid4()}.mp4"
+    path.write_bytes(video_bytes)
+    try:
+        return (await face_detection.check_clip(settings.ffmpeg_path, path)).has_person
+    except Exception:
+        logger.exception("Face check failed; accepting the clip unchecked")
+        return False
+    finally:
+        path.unlink(missing_ok=True)
+
+
+async def _with_audio_from(
+    settings: Settings, picture: bytes, sound: bytes
+) -> bytes:
+    """
+    One clip's picture with another's audio.
+
+    The retake has the frame we want and nothing spoken in it; the take it
+    replaces has a stranger in frame and the line read properly in Veo's own
+    voice. Lip sync is not a concern here - there is nobody on screen - so
+    the two halves can simply be put together, and the video keeps one voice
+    throughout instead of switching to a synthesised one for this clip.
+    """
+    stem = Path(tempfile.gettempdir()) / f"oneinfo-mux-{uuid.uuid4()}"
+    video_path, audio_path, out_path = (
+        Path(f"{stem}-v.mp4"), Path(f"{stem}-a.mp4"), Path(f"{stem}-out.mp4")
+    )
+    video_path.write_bytes(picture)
+    audio_path.write_bytes(sound)
+    try:
+        await run_ffmpeg(
+            settings.ffmpeg_path,
+            [
+                "-i", str(video_path),
+                "-i", str(audio_path),
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                str(out_path),
+            ],
+        )
+        return out_path.read_bytes()
+    finally:
+        for path in (video_path, audio_path, out_path):
+            path.unlink(missing_ok=True)
+
+
+async def _voice_b_roll(
+    db: AsyncSession,
+    settings: Settings,
+    storage,
+    project: Project,
+    scene: StoryboardScene,
+    temp_files: list[Path],
+) -> Path:
+    """Speaks a b-roll scene's line over its new clip; returns the voiced file."""
+    # Imported here: voice_service builds on this module.
+    from app.services import voice_service
+
+    try:
+        await voice_service.voice_scene(
+            db, settings, project.creator_id, project.id, scene.id
+        )
+    except Exception as exc:
+        raise GenerationError(
+            f"Scene {scene.order} was generated, but speaking its line over it "
+            "failed, so it would be silent in the video. The clip is saved - "
+            "use Voice on that scene to try again, which does not regenerate it."
+        ) from exc
+
+    asset = await _existing_clip(db, scene)
+    local_path = Path(tempfile.gettempdir()) / f"oneinfo-voiced-{uuid.uuid4()}.mp4"
+    local_path.write_bytes(await asyncio.to_thread(storage.read, asset.storage_key))
+    temp_files.append(local_path)
+    return local_path
+
+
 async def run_generation_job(job_id: uuid.UUID) -> None:
     """
     The actual worker. Runs in its own DB session since it executes after
@@ -679,6 +797,16 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
             # in frame; it is stored so they can read it, and stored means
             # it can be behind any of those. Anything they wrote by hand is
             # left exactly as they wrote it.
+            #
+            # The creator is described first when they have a photo and no
+            # description, so every clip - not just the ones carrying the
+            # photo - names the same narrator.
+            if not job.stitch_only:
+                creator = await db.get(Creator, project.creator_id)
+                if creator is not None:
+                    await creator_identity_service.ensure_descriptions(
+                        db, settings, creator
+                    )
             await storyboard_service.refresh_visual_prompts(
                 db, project.creator_id, scenes
             )
@@ -753,21 +881,97 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 )
                 await db.commit()
 
-                provider_job_id = await video_provider.create_video_job(
-                    VideoGenerationRequest(
-                        visual_prompt=scene.visual_prompt,
-                        duration_seconds=scene.duration_seconds,
-                        # Only on-camera scenes carry the face, so only they
-                        # get routed to the pricier reference model.
-                        reference_images=face_images if scene.features_creator else [],
-                        aspect_ratio=output.aspect_ratio.value,
-                        resolution=output.resolution.value,
-                        sample_count=output.takes,
-                        prefer_reference_model=output.model_tier is ModelTier.fast,
-                    )
+                request = VideoGenerationRequest(
+                    visual_prompt=scene.visual_prompt,
+                    duration_seconds=scene.duration_seconds,
+                    # Only on-camera scenes carry the face, so only they
+                    # get routed to the pricier reference model.
+                    reference_images=face_images if scene.features_creator else [],
+                    aspect_ratio=output.aspect_ratio.value,
+                    resolution=output.resolution.value,
+                    sample_count=output.takes,
+                    prefer_reference_model=output.model_tier is ModelTier.fast,
                 )
-                await _wait_for_completion(video_provider, provider_job_id)
-                takes = await video_provider.download_all_results(provider_job_id)
+
+                # A b-roll clip is looked at before it is accepted. Told that
+                # nobody is in frame, Veo still seats a stranger in one b-roll
+                # clip in four or so to read the line, and no wording tried
+                # stopped it. One retry, because each costs a clip: a second
+                # clip with a face in it is kept and the run goes on.
+                wants_nobody = (
+                    not scene.features_creator
+                    and storyboard_service.scene_environment(scene).subject
+                    is not Subject.people
+                )
+                takes: list[bytes] = []
+                clean: list[bool] = []
+                silent: list[bool] = []
+                for attempt in range(MAX_PERSON_RETRIES + 1 if wants_nobody else 1):
+                    # The retake is generated silent. Asked to speak a line,
+                    # Veo casts someone to say it - both takes of one b-roll
+                    # scene came back with a stranger behind the laptop - and
+                    # a clip with nothing to say has nobody to cast. The line
+                    # is not lost: the rejected take speaks it in Veo's own
+                    # voice, and that audio goes onto this picture below.
+                    spoken_attempt = attempt == 0
+                    if not spoken_attempt:
+                        job.current_stage = (
+                            f"Scene {scene.order} came back with a person in it - "
+                            "generating it again without dialogue"
+                        )
+                        await db.commit()
+                    try:
+                        provider_job_id = await video_provider.create_video_job(
+                            request
+                            if spoken_attempt
+                            else silent_request(request, scene.visual_prompt)
+                        )
+                        await _wait_for_completion(video_provider, provider_job_id)
+                        results = await video_provider.download_all_results(
+                            provider_job_id
+                        )
+                    except Exception:
+                        # A retake that cannot be made is not worth failing a
+                        # run over: every clip before this one is paid for,
+                        # and the take in hand is watchable even with someone
+                        # in it. A first attempt that fails is the real thing
+                        # going wrong, so that one still stops the run.
+                        if spoken_attempt:
+                            raise
+                        logger.exception(
+                            "Scene %s's retake failed; keeping the take with a "
+                            "person in it",
+                            scene.order,
+                        )
+                        break
+                    for video_bytes in results:
+                        takes.append(video_bytes)
+                        silent.append(not spoken_attempt)
+                        clean.append(
+                            not wants_nobody
+                            or not await _has_person(settings, video_bytes)
+                        )
+                    if any(clean):
+                        break
+
+                # The clip that goes in the video: the first one with nobody
+                # in it, or the newest attempt if every one of them has
+                # somebody. Decided before the takes are saved, because a
+                # silent winner is muxed with the spoken take's audio and it
+                # is that muxed clip which is worth keeping.
+                chosen = clean.index(True) if any(clean) else len(takes) - 1
+                voiced_over = False
+                if silent[chosen] and not silent[0]:
+                    try:
+                        takes[chosen] = await _with_audio_from(
+                            settings, takes[chosen], takes[0]
+                        )
+                        voiced_over = True
+                    except Exception:
+                        logger.exception(
+                            "Could not move the spoken audio onto scene %s's retake",
+                            scene.order,
+                        )
 
                 # Every take is saved, because every take was billed. The
                 # creator picks between them afterwards; throwing the rest
@@ -817,11 +1021,36 @@ async def run_generation_job(job_id: uuid.UUID) -> None:
                 # slot, and none of this run's clips are that clip. Points at
                 # the first of the new ones, which is also what the finished
                 # video uses unless they pick otherwise.
-                scene.selected_take = first_take
+                scene.selected_take = first_take + chosen
                 # Indexed locally: take_paths holds only this run's files,
                 # while selected_take counts from the scene's whole history.
-                render_inputs.append(take_paths[0])
+                render_inputs.append(take_paths[chosen])
                 captions.append(None if scene.features_creator else scene.voiceover)
+                await db.commit()
+
+                # B-roll came back silent - its prompt gave Veo nothing to say,
+                # which is what keeps a speaker out of the frame - so the line
+                # is spoken over it now, in the creator's voice. Costs nothing
+                # at Veo. Done inside the run rather than left to the creator:
+                # a silent clip in the finished video is not a clip anyone
+                # would choose.
+                needs_a_voice = silent[chosen] and not voiced_over
+                if (
+                    (storyboard_service.narrates_b_roll(settings) or needs_a_voice)
+                    and settings.speech_mode == "sarvam"
+                    and not scene.features_creator
+                    and scene.voiceover.strip()
+                ):
+                    job.current_stage = (
+                        "Voicing your scene"
+                        if single_scene
+                        else f"Voicing scene {index} of {len(scenes)}"
+                    )
+                    await db.commit()
+                    render_inputs[-1] = await _voice_b_roll(
+                        db, settings, storage, project, scene, temp_files
+                    )
+
                 job.scenes_completed = index
                 await db.commit()
 

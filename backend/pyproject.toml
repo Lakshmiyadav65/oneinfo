@@ -25,6 +25,9 @@ dependencies = [
   # Validates creator reference photos (format + dimensions) before they
   # are ever sent to Veo as a subject reference.
   "pillow>=11.0",
+  # Looks for a face in generated b-roll, which is meant to have nobody in
+  # it, so a clip with a stranger in frame can be regenerated.
+  "opencv-python-headless>=4.10",
   "sentry-sdk[fastapi]>=2.0",
   # Downloads the reel behind a link a creator pastes into My Knowledge.
   # Used as the CLI it installs, not as a library — Instagram reshuffles its
