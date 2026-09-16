@@ -14,7 +14,7 @@ from app.agents.environment_prompt import (
 )
 from app.agents.qa_agent import run_qa_agent
 from app.agents.storyboard_agent import run_storyboard_agent
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.core.errors import NotFoundError, ValidationAppError
 from app.models.creator import Creator
 from app.models.project import Project, ProjectStatus
@@ -30,6 +30,7 @@ from app.schemas.environment import SceneEnvironment, environment_for_preset
 from app.schemas.output_settings import OutputSettings
 from app.services import (
     creator_face_service,
+    creator_identity_service,
     project_service,
     script_service,
     tanglish_service,
@@ -128,7 +129,19 @@ async def _rebuild_visual(
         aspect_ratio=_aspect_label(project),
         scene_number=scene.order,
         scene_count=scene_count,
+        narrated_afterwards=narrates_b_roll(get_settings()),
     )
+
+
+def narrates_b_roll(settings: Settings) -> bool:
+    """
+    Whether b-roll is generated silent and voiced afterwards.
+
+    Off unless SILENT_B_ROLL is set, and then only when a real voice is
+    configured. With the dev speech provider the voice pass produces silence,
+    so a silent clip would reach the finished video mute.
+    """
+    return settings.silent_b_roll and settings.speech_mode == "sarvam"
 
 
 async def refresh_visual_prompts(
@@ -318,12 +331,62 @@ def _cap_on_camera_scenes(output: StoryboardOutput, allowed: bool) -> None:
             scene.features_creator = False
         return
     ceiling = _on_camera_ceiling(len(output.scenes))
-    seen = 0
-    for scene in output.scenes:
-        if scene.features_creator:
-            seen += 1
-            if seen > ceiling:
-                scene.features_creator = False
+    flagged = [scene for scene in output.scenes if scene.features_creator]
+    # The hook first, then the closing line, then whatever comes between.
+    # Keeping the first N instead dropped the call to action - the scene the
+    # agent had written as "the creator pointing down at the comments" -
+    # and left it to generate as b-roll with nobody's face to use.
+    keep = flagged[:1] + flagged[1:][::-1]
+    for scene in keep[ceiling:]:
+        scene.features_creator = False
+
+
+def _fold_short_on_camera_lines(
+    output: StoryboardOutput,
+    allowed_durations: tuple[int, ...] | None,
+    reference_durations: tuple[int, ...] | None,
+) -> None:
+    """
+    Gives an on-camera line too short for its clip somewhere else to go.
+
+    On camera the clip is eight seconds whatever is said in it. A three-word
+    line ("Idhi ento telusa?") filled the first second, and Veo spent the
+    other seven ad-libbing and staring - the clip a demo audience called
+    nonsense. The agent is told the word range and does not always keep to
+    it, so this is enforced here rather than asked for again.
+
+    Merged into the scene before it when the joined line still fits that
+    scene's clip, else into the one after; failing both, taken off camera so
+    it can have a clip as short as the line.
+    """
+    if not reference_durations:
+        return
+    on_camera_seconds = max(reference_durations)
+    scenes = output.scenes
+    index = 0
+    while index < len(scenes):
+        scene = scenes[index]
+        if not scene.features_creator or not scene.voiceover.strip() or (
+            speech_seconds(scene.voiceover) >= on_camera_seconds / 2
+        ):
+            index += 1
+            continue
+
+        def fits(line: str, neighbour: AgentScene) -> bool:
+            durations = reference_durations if neighbour.features_creator else allowed_durations
+            return bool(durations) and speech_seconds(line) <= max(durations)
+
+        before = scenes[index - 1] if index > 0 else None
+        after = scenes[index + 1] if index + 1 < len(scenes) else None
+        if before is not None and fits(f"{before.voiceover} {scene.voiceover}", before):
+            before.voiceover = f"{before.voiceover.strip()} {scene.voiceover.strip()}"
+            del scenes[index]
+        elif after is not None and fits(f"{scene.voiceover} {after.voiceover}", after):
+            after.voiceover = f"{scene.voiceover.strip()} {after.voiceover.strip()}"
+            del scenes[index]
+        else:
+            scene.features_creator = False
+            index += 1
 
 
 async def generate_storyboard(
@@ -357,6 +420,8 @@ async def generate_storyboard(
         and creator.face_consent_at is not None
         and bool(await creator_face_service.list_faces(db, creator_id))
     )
+    if on_camera_available:
+        await creator_identity_service.ensure_descriptions(db, settings, creator)
 
     llm = get_llm_provider(settings)
     allowed_durations = get_supported_durations(settings)
@@ -385,6 +450,7 @@ async def generate_storyboard(
     # have to be settled before it runs.
     _split_overlong_scenes(output, allowed_durations)
     _cap_on_camera_scenes(output, on_camera_available)
+    _fold_short_on_camera_lines(output, allowed_durations, reference_durations)
     _normalize_scenes(output, allowed_durations, reference_durations)
     qa_result = run_qa_agent(output, estimated_duration_seconds=target_seconds)
 
@@ -424,6 +490,7 @@ async def generate_storyboard(
                     aspect_ratio=_aspect_label(project),
                     scene_number=scene.order,
                     scene_count=len(output.scenes),
+                    narrated_afterwards=narrates_b_roll(settings),
                 ),
                 environment=default_environment.model_dump(mode="json"),
                 caption=scene.caption,

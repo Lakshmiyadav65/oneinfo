@@ -24,6 +24,7 @@ from app.providers.video.base import fit_duration, snap_duration
 from app.schemas.agents import StoryboardOutput, StoryboardScene
 from app.services.storyboard_service import (
     _cap_on_camera_scenes,
+    _fold_short_on_camera_lines,
     _normalize_scenes,
     _on_camera_ceiling,
     _split_overlong_scenes,
@@ -184,6 +185,74 @@ def test_a_short_storyboard_keeps_the_creator_in_the_shot_that_earns_it():
 
     # The hook keeps the creator; the second scene drops to b-roll.
     assert [scene.features_creator for scene in output.scenes] == [True, False]
+
+
+def test_the_cap_keeps_the_hook_and_the_closing_line():
+    """
+    The demo storyboard flagged scenes 1, 2 and 6. Keeping the first two
+    dropped the call to action - written as the creator pointing at the
+    comments - which then generated as b-roll with a stranger in it.
+    """
+    output = StoryboardOutput(
+        scenes=[
+            _scene(1, 19, on_camera=True, duration=8),
+            _scene(2, 19, on_camera=True, duration=8),
+            *[_scene(n, 19, on_camera=False, duration=8) for n in (3, 4, 5)],
+            _scene(6, 19, on_camera=True, duration=8),
+        ]
+    )
+
+    _cap_on_camera_scenes(output, allowed=True)
+
+    assert [s.features_creator for s in output.scenes] == [
+        True, False, False, False, False, True,
+    ]
+
+
+def test_a_short_on_camera_line_joins_the_scene_before_it():
+    """"Idhi ento telusa?" - three words in an eight-second on-camera clip,
+    and seven seconds of Veo ad-libbing after it."""
+    output = StoryboardOutput(
+        scenes=[
+            _scene(1, 17, on_camera=True, duration=8),
+            _scene(2, 3, on_camera=True, duration=8),
+            _scene(3, 22, on_camera=False, duration=8),
+        ]
+    )
+
+    _fold_short_on_camera_lines(output, VEO, VEO_ON_CAMERA)
+
+    assert len(output.scenes) == 2
+    assert len(output.scenes[0].voiceover.split()) == 20
+    assert output.scenes[0].features_creator
+
+
+def test_a_short_on_camera_line_with_nowhere_to_go_comes_off_camera():
+    output = StoryboardOutput(
+        scenes=[
+            _scene(1, 20, on_camera=True, duration=8),
+            _scene(2, 3, on_camera=True, duration=8),
+            _scene(3, 20, on_camera=False, duration=8),
+        ]
+    )
+
+    _fold_short_on_camera_lines(output, VEO, VEO_ON_CAMERA)
+
+    assert len(output.scenes) == 3
+    assert not output.scenes[1].features_creator
+    _normalize_scenes(output, VEO, VEO_ON_CAMERA)
+    assert output.scenes[1].duration_seconds == 4
+
+
+def test_qa_flags_a_short_line_left_on_camera():
+    output = StoryboardOutput(scenes=[
+        _scene(1, 3, on_camera=True, duration=8),
+        _scene(2, 20, on_camera=False, duration=8),
+    ])
+
+    result = run_qa_agent(output, estimated_duration_seconds=None)
+
+    assert any("filler" in issue for issue in result.issues)
 
 
 def test_a_line_that_outruns_every_clip_is_split_across_scenes():

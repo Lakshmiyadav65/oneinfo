@@ -225,6 +225,33 @@ _NO_PEOPLE = (
 # problem: a second invented person standing next to them.
 _NO_OTHER_PEOPLE = "No other people in the shot besides the person described."
 
+# Words that put a person into an ACTION line.
+#
+# The storyboard agent writes the action before code decides who is on
+# camera, and the on-camera cap turns scenes off after it has written them.
+# One such scene reached Veo reading "the creator looking into the lens and
+# pointing downwards" on a b-roll clip: no reference photo went with it, so
+# Veo cast a stranger - a man, in a video presented by a woman - and the
+# "nobody appears" sentence above it lost to the positive instruction.
+_PERSON_IN_ACTION = re.compile(
+    r"\b(creator|presenter|host|narrator|speaker|person|people|someone|somebody|"
+    r"man|woman|men|women|guy|girl|boy|he|she|his|her|him|they|their|"
+    r"face|faces|hand|hands|finger|fingers|smil\w*|nodd\w*|gestur\w*|"
+    r"point(?:s|ing)?|look(?:s|ing)? (?:into|at) (?:the )?(?:lens|camera)|"
+    r"to camera|into (?:the )?camera)\b",
+    re.IGNORECASE,
+)
+
+# What a b-roll scene shows when the action it was given describes a person.
+_PEOPLE_FREE_ACTION = (
+    "Show the subject of the dialogue itself - the screen, the object, the "
+    "place or the result it describes - with no person in frame"
+)
+
+
+def action_names_a_person(action: str) -> bool:
+    return bool(_PERSON_IN_ACTION.search(action))
+
 
 def _negative_prompt(*, features_creator: bool, subject: Subject) -> str:
     """
@@ -241,6 +268,16 @@ def _negative_prompt(*, features_creator: bool, subject: Subject) -> str:
         return _NEGATIVE_PROMPT
     tail = _NO_OTHER_PEOPLE if features_creator else _NO_PEOPLE
     return f"{_NEGATIVE_PROMPT} {tail}"
+
+
+_NO_SPEECH = "No speech. No talking. No voice. No lip movement."
+
+# What a b-roll scene is filmed as, in place of the preset's studio.
+_INSERT_SHOT = (
+    "A close insert shot of the object itself, filmed on a set with no one "
+    "working at it and no chair for anyone to sit in - the thing alone in "
+    "frame, filling it, the way a cutaway is shot between takes"
+)
 
 
 def aspect_ratio_label(width: int, height: int) -> str:
@@ -273,9 +310,13 @@ def compose_visual_prompt(
     aspect_ratio: str | None = None,
     scene_number: int | None = None,
     scene_count: int | None = None,
+    narrated_afterwards: bool = False,
 ) -> str:
     """
     The full visual prompt for one scene, as a labelled block.
+
+    `narrated_afterwards` makes a b-roll scene silent: its line is spoken
+    over the clip once generated, so Veo is given nothing to say.
 
     `action` is what the storyboard agent said happens in the shot. It is kept
     verbatim in the middle of the prompt rather than paraphrased: it is the
@@ -290,6 +331,8 @@ def compose_visual_prompt(
         header.append(f"Aspect Ratio: {aspect_ratio}")
     header.append(f"Style: {_STYLE[environment.visual_style]}")
 
+    silent = narrated_afterwards and not features_creator
+
     # The voice belongs to the whole video, not to the scenes the creator is
     # visible in.
     #
@@ -299,35 +342,78 @@ def compose_visual_prompt(
     # back with a woman reading one clip and a man reading the next. Being
     # off screen changes the picture; it does not change who is speaking.
     audio = ["Native recorded audio. No music, no dubbing."]
-    if voice_description:
-        audio.append(f"{voice_description.strip().rstrip('.')}.")
-    if not features_creator:
+    voice = voice_description.strip().rstrip(".") if voice_description else ""
+    if silent:
+        # A b-roll clip asked to speak a line gets a speaker to say it.
+        # Wording could not prevent that: told the voice was off screen and
+        # never seen, Veo still sat a stranger behind the laptop in one clip
+        # out of two. A clip with nothing to say has no one to cast. The line
+        # is laid over it afterwards in the creator's chosen voice.
+        audio = [
+            (
+                "Quiet ambient room tone only. Nobody speaks and no voice is "
+                "heard anywhere in this clip - narration is added separately "
+                "afterwards. No music."
+            )
+        ]
+    elif features_creator:
+        if voice:
+            audio.append(
+                f"Speaking voice: {voice}. The same voice as every other clip."
+            )
+    elif voice:
+        # Worded as a sound, not a person. "Narrator's voice: a young woman
+        # with a clear voice" reads as casting to Veo: on two b-roll clips of
+        # the first run with it, a stranger matching that description sat
+        # in frame reading the line.
+        audio.append(
+            "The line is an off-screen voiceover track laid over the picture. "
+            f"The voice heard is {voice[0].lower() + voice[1:]}, and whoever "
+            "owns that voice is never seen - do not show the speaker."
+        )
+    else:
         # Nobody is in frame here and the negatives say so, and a line still
         # has to come from somewhere. Saying where stops the model resolving
         # that by putting a speaker back in the shot.
         audio.append("The line is delivered as an off-screen voiceover.")
-    # Said on every scene, and said even when no description is on file: it
-    # is the only thing holding one narrator across clips the model
+    # Said on every speaking scene, and said even when no description is on
+    # file: it is the only thing holding one narrator across clips the model
     # generates separately and with no memory of each other.
-    audio.append(
-        "One narrator for the whole video - the same voice, accent, age and "
-        "gender in every clip."
-    )
+    if not silent:
+        audio.append(
+            "One narrator for the whole video - the same voice, accent, age and "
+            "gender in every clip."
+        )
     header.append("Audio: " + " ".join(audio))
 
-    spoken = _SPOKEN_LANGUAGE.get(language, _SPOKEN_LANGUAGE["english"])
-    header.append(f"Spoken language: {spoken} {_DIALOGUE_RULE}")
+    if not silent:
+        spoken = _SPOKEN_LANGUAGE.get(language, _SPOKEN_LANGUAGE["english"])
+        header.append(f"Spoken language: {spoken} {_DIALOGUE_RULE}")
 
     # SCENE - the set, who is in it, and whether it has to match its
     # neighbours.
+    #
+    # A b-roll scene does not get the preset's set description. Every preset
+    # describes a room built for a presenter - "a modern creator studio with
+    # a desk setup, professional key lighting, YouTube production quality" -
+    # and a set built for someone to sit in is an invitation to seat someone
+    # in it. Two takes of one b-roll scene came back with a stranger behind
+    # the laptop reading the line, under a prompt that said nobody appears.
+    # What b-roll needs is the insert shot: the thing itself, close, alone.
+    b_roll = not features_creator and environment.subject is not Subject.people
     scene: list[str] = []
     if environment.preset is EnvironmentPreset.custom:
+        # The creator's own words for the set stay, b-roll or not - they
+        # wrote them for this scene, and the insert-shot line below says
+        # how it is framed rather than where it is.
         if environment.custom_setup.strip():
             scene.append(environment.custom_setup.strip().rstrip("."))
-    else:
+    elif not b_roll:
         characteristics = PRESETS[environment.preset]["characteristics"]
         if characteristics:
             scene.append(f"Filmed in {characteristics}")
+    if b_roll:
+        scene.append(_INSERT_SHOT)
 
     # Who is in the shot, said outright in every case.
     #
@@ -371,9 +457,10 @@ def compose_visual_prompt(
     # sketching on a whiteboard". Both are positive instructions, and a
     # positive instruction beats an entry on a list of things to avoid. So
     # the conflict is resolved here in words rather than left to the model.
-    if not features_creator and environment.subject is not Subject.people:
+    if b_roll:
         scene.append(
-            "Nobody appears in this shot at all - no presenter, no bystander, "
+            "Nobody appears in this shot at all - not the person whose voice is "
+            "heard, no presenter, no bystander, "
             "no hands, no reflection of a person. Where the set or the action "
             "below implies someone, show only what they would be working on: "
             "the screen, the whiteboard already drawn on, the desk, the "
@@ -383,11 +470,19 @@ def compose_visual_prompt(
 
     # Continuity, for the same reason and by the same means: the clips are
     # generated separately and have to look like one recording.
+    #
+    # The person is only carried across on scenes that have one. "Keep the
+    # same person" on a b-roll clip is a positive instruction to put a person
+    # in it, and it sat directly after the sentence saying nobody appears.
     if scene_number and scene_count and scene_count > 1:
+        keep = (
+            "the same person, the same outfit and hairstyle, the same location"
+            if features_creator or environment.subject is Subject.people
+            else "the same location"
+        )
         scene.append(
             f"This is clip {scene_number} of {scene_count} from a single continuous "
-            "recording. Keep the same person, the same outfit and hairstyle, the "
-            "same location and the same lighting as the other clips"
+            f"recording. Keep {keep} and the same lighting as the other clips"
         )
 
     # ENVIRONMENT - background and whatever the creator asked for by hand,
@@ -416,6 +511,11 @@ def compose_visual_prompt(
     # Sentence-cased because the agent writes the action as a fragment
     # ("explaining hackathon failures") and it lands here as its own line.
     action_text = action.strip().rstrip(".")
+    # A b-roll scene whose action puts someone in frame is replaced rather
+    # than argued with - see _PERSON_IN_ACTION. The stored action is left
+    # alone, so ticking the creator back on restores it word for word.
+    if action_text and b_roll and action_names_a_person(action_text):
+        action_text = _PEOPLE_FREE_ACTION
     if action_text:
         action_text = action_text[0].upper() + action_text[1:] + "."
 
@@ -423,7 +523,22 @@ def compose_visual_prompt(
         ("SCENE", ". ".join(scene) + "." if scene else ""),
         # Quoted so the model reads it as speech rather than as description,
         # and left byte-for-byte as the creator approved it.
-        ("DIALOGUE", f'"{dialogue.strip()}"' if dialogue.strip() else ""),
+        (
+            "DIALOGUE",
+            f'"{dialogue.strip()}"' if dialogue.strip() and not silent else "",
+        ),
+        # A silent clip still has to illustrate the line, so it is given as
+        # what the shot is about - under a label that says it is not spoken.
+        (
+            "NARRATION CONTEXT",
+            (
+                "Narration laid over this shot afterwards - it is context for "
+                "what to show, and is never spoken or written in the clip: "
+                f'"{dialogue.strip()}"'
+            )
+            if dialogue.strip() and silent
+            else "",
+        ),
         ("ACTION", action_text),
         ("CAMERA", camera),
         ("LIGHTING", _LIGHTING[environment.lighting].capitalize() + "."),
@@ -437,7 +552,8 @@ def compose_visual_prompt(
             "NEGATIVE PROMPT",
             _negative_prompt(
                 features_creator=features_creator, subject=environment.subject
-            ),
+            )
+            + (f" {_NO_SPEECH}" if silent else ""),
         ),
     ]
 
@@ -492,3 +608,55 @@ def replace_spoken_language(prompt: str, language: str) -> str | None:
     return _SPOKEN_HEADER.sub(
         lambda _: f"Spoken language: {spoken} {_DIALOGUE_RULE}", prompt, count=1
     )
+
+
+# The Audio header line, which is its own line in the header block.
+_AUDIO_HEADER = re.compile(r"^Audio: .*$", re.MULTILINE)
+_NEGATIVE_SECTION = re.compile(
+    r"^NEGATIVE PROMPT:\n.*?(?=\n\n[A-Z][A-Z ]*:\n|\Z)", re.MULTILINE | re.DOTALL
+)
+
+_SILENT_AUDIO = (
+    "Audio: Quiet ambient room tone only. Nobody speaks and no voice is heard "
+    "anywhere in this clip - narration is added separately afterwards. No music."
+)
+
+
+def silence_prompt(prompt: str) -> str:
+    """
+    The same shot with nothing spoken in it.
+
+    Used on the retake of a b-roll clip that came back with a stranger in
+    frame. A line to speak is what makes Veo cast a speaker, and no wording
+    tried talked it out of that - two takes of one scene both seated a woman
+    behind the laptop, under a prompt saying nobody appears. The line is not
+    lost: the rejected take says it in Veo's own voice, and that audio is
+    laid over this picture.
+
+    Edits the blocks rather than rebuilding them, so it works on a prompt a
+    creator wrote by hand too - and someone whose own wording produced a
+    stranger needs it more than anyone.
+    """
+    spoken = _DIALOGUE_SECTION.search(prompt)
+    line = spoken.group(0).split("\n", 1)[1].strip() if spoken else ""
+
+    silent = _DIALOGUE_SECTION.sub("", prompt, count=1)
+    silent = _SPOKEN_HEADER.sub("", silent, count=1)
+    # A prompt the creator wrote by hand may have no Audio header to
+    # replace, and then nothing in it would say the clip is silent - the
+    # negatives alone are a weaker instruction than a header line.
+    if _AUDIO_HEADER.search(silent):
+        silent = _AUDIO_HEADER.sub(_SILENT_AUDIO, silent, count=1)
+    else:
+        silent = _SILENT_AUDIO + "\n\n" + silent.lstrip()
+    silent = _NEGATIVE_SECTION.sub(
+        lambda match: f"{match.group(0).rstrip()} {_NO_SPEECH}", silent, count=1
+    )
+    if line:
+        silent = silent.rstrip() + (
+            "\n\nNARRATION CONTEXT:\nNarration laid over this shot afterwards - "
+            "it is context for what to show, and is never spoken or written in "
+            f"the clip: {line}"
+        )
+    # Tidies the blank lines left where the blocks were.
+    return re.sub(r"\n{3,}", "\n\n", silent).strip() + "\n"

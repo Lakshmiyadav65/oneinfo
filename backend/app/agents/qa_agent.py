@@ -64,6 +64,22 @@ def run_qa_agent(
                 "off. Shorten the line or split the scene."
             )
 
+        # The opposite failure, on the one kind of clip whose length cannot
+        # shrink to meet the line. On camera the clip is eight seconds, and a
+        # three-word line leaves Veo seven of them to fill - it ad-libs and
+        # stares, which is what a demo audience called nonsense.
+        elif (
+            scene.features_creator
+            and scene.voiceover.strip()
+            and spoken < scene.duration_seconds / 2
+        ):
+            issues.append(
+                f"Scene {scene.order} is on camera for {scene.duration_seconds}s but "
+                f"its line takes about {max(spoken, 1):.0f}s to say, so the rest of "
+                "the clip would be filler. Add to the line, move it into the scene "
+                "next to it, or take this scene off camera."
+            )
+
         lowered = f"{scene.voiceover} {scene.visual_prompt} {scene.caption}".lower()
         if any(term in lowered for term in _UNSAFE_TERMS):
             issues.append(f"Scene {scene.order} contains a flagged term and needs manual review.")

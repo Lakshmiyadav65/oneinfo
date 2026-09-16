@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import json
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -65,11 +67,22 @@ class GeminiLLMProvider:
         self._default_model = default_model
 
     async def generate_structured(
-        self, prompt: str, schema: type[BaseModel], *, model: str | None = None
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        *,
+        model: str | None = None,
+        images: Sequence[tuple[bytes, str]] = (),
     ) -> BaseModel:
+        """`images` are (bytes, mime type) pairs sent ahead of the prompt."""
         url = f"{_BASE_URL}/{model or self._default_model}:generateContent"
+        parts: list[dict[str, Any]] = [
+            {"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode()}}
+            for data, mime in images
+        ]
+        parts.append({"text": prompt})
         body = {
-            "contents": [{"parts": [{"text": prompt}]}],
+            "contents": [{"parts": parts}],
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "responseSchema": _to_gemini_schema(schema),

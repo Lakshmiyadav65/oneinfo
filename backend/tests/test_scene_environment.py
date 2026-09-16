@@ -40,11 +40,11 @@ def test_every_preset_builds_a_complete_setup(preset):
 @pytest.mark.parametrize("preset", list(EnvironmentPreset))
 def test_every_preset_produces_a_prompt(preset):
     prompt = compose_visual_prompt(
-        environment_for_preset(preset), action="a person at a desk", features_creator=False
+        environment_for_preset(preset), action="a laptop on a desk", features_creator=False
     )
 
     assert prompt.endswith(".")
-    assert "a person at a desk".capitalize() in prompt
+    assert "a laptop on a desk".capitalize() in prompt
     # Framing, movement, lighting and style are never optional: an empty one
     # would leave the model to invent that part of the shot.
     assert "Shot as" in prompt
@@ -188,7 +188,18 @@ def test_continuity_is_stated_only_for_a_multi_clip_video():
         scene_count=5,
     )
     assert "clip 2 of 5" in across
-    assert "same outfit" in across
+    assert "same location" in across
+    # "Keep the same person" on a shot with nobody in it asks for a person.
+    assert "same person" not in across
+
+    on_camera = compose_visual_prompt(
+        environment,
+        action="talking",
+        features_creator=True,
+        scene_number=2,
+        scene_count=5,
+    )
+    assert "same outfit" in on_camera
 
     alone = compose_visual_prompt(
         environment,
@@ -313,8 +324,87 @@ def test_the_voice_is_named_on_b_roll_too():
         voice_description=voice,
     )
 
-    assert voice in b_roll
+    assert voice.lower() in b_roll.lower()
     assert "off-screen voiceover" in b_roll
+    # Worded as a sound, not a person - described as a person, Veo put her
+    # in the frame of a b-roll clip.
+    assert "never seen" in b_roll
+    assert "Narrator's voice:" not in b_roll
+
+
+def test_a_b_roll_action_describing_the_creator_never_reaches_the_model():
+    """
+    Clip 6 of the demo: taken off camera by the cap, but its action still
+    read "the creator looking into the lens and pointing downwards". No
+    photo went with it, so Veo cast a man in a woman's video.
+    """
+    action = "the creator looking into the lens and pointing downwards towards the comment section"
+
+    b_roll = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action=action,
+        features_creator=False,
+    )
+    on_camera = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action=action,
+        features_creator=True,
+    )
+
+    assert "creator looking" not in b_roll.split("ACTION:")[1].lower()
+    assert "no person in frame" in b_roll
+    assert "looking into the lens" in on_camera
+
+
+def test_b_roll_voiced_afterwards_gives_veo_nothing_to_say():
+    """
+    Told the voice was off screen and never seen, Veo still sat a stranger
+    behind the laptop to read the line. A clip with no line has nobody to
+    cast; the voice is laid over it afterwards.
+    """
+    line = "NotebookLM ni use chesi mee textbooks ni summaries ga marchandi."
+    prompt = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action="A laptop screen showing a summarised textbook page",
+        features_creator=False,
+        voice_description="A young woman with a clear voice",
+        dialogue=line,
+        language="tenglish",
+        narrated_afterwards=True,
+    )
+
+    assert "DIALOGUE:" not in prompt
+    assert "Spoken language:" not in prompt
+    assert "Nobody speaks" in prompt
+    assert "young woman" not in prompt
+    assert "No lip movement" in prompt
+    # Still told what the shot is about.
+    assert line in prompt.split("NARRATION CONTEXT:")[1]
+
+
+def test_an_on_camera_scene_still_speaks_when_b_roll_is_voiced_afterwards():
+    prompt = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action="talking to camera",
+        features_creator=True,
+        dialogue="Idhi ento telusa?",
+        narrated_afterwards=True,
+    )
+
+    assert 'DIALOGUE:\n"Idhi ento telusa?"' in prompt
+    assert "Nobody speaks" not in prompt
+
+
+def test_a_b_roll_action_about_a_thing_is_kept():
+    action = "A close up of a smartphone screen showing a blurred analytics dashboard"
+
+    prompt = compose_visual_prompt(
+        environment_for_preset(EnvironmentPreset.youtube_studio),
+        action=action,
+        features_creator=False,
+    )
+
+    assert "smartphone screen" in prompt
 
 
 def test_every_scene_asks_for_one_narrator():
@@ -418,7 +508,9 @@ def test_an_action_that_names_a_person_is_overruled_on_b_roll():
     assert "Nobody appears in this shot at all" in scene
     assert "no hands" in scene
     # Stated after the set, so it is the last word rather than the first.
-    assert scene.index("Nobody appears") > scene.index("creator studio")
+    # Said after the set description, whatever the set is: it is the final
+    # word on a question the lines above it keep reopening.
+    assert scene.index("Nobody appears") > scene.index("insert shot")
 
 
 def test_the_override_leaves_a_deliberate_shot_of_people_alone():
